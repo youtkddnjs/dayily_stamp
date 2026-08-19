@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<title>매일 공부 스탬프</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 로그인 화면 ===== -->
+  <section id="screen-login" class="screen">
+    <div class="card login-card">
+      <div class="login-emoji">📅</div>
+      <h1>매일 공부 스탬프</h1>
+      <p class="subtitle">4자리 접속 코드를 입력하세요</p>
+      <input id="login-code" maxlength="4" inputmode="latin" autocomplete="off" placeholder="- - - -" class="code-input" />
+      <button id="btn-login" class="btn btn-primary btn-block">접속하기</button>
+      <p id="login-error" class="error-text"></p>
+      <p class="hint-text small">최초 관리자 코드: <b>a111</b></p>
+    </div>
+  </section>
+
+  <!-- ===== 캘린더(메인) 화면 ===== -->
+  <section id="screen-calendar" class="screen hidden">
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="user-badge" id="current-user-name"></span>
+      </div>
+      <div class="topbar-right">
+        <button id="btn-goto-settings" class="icon-btn" title="설정">⚙️ 설정</button>
+        <button id="btn-logout" class="icon-btn" title="로그아웃">로그아웃</button>
+      </div>
+    </header>
+
+    <div class="calendar-nav">
+      <button id="btn-prev-month" class="nav-btn" aria-label="이전 달">‹</button>
+      <h2 id="calendar-title"></h2>
+      <button id="btn-next-month" class="nav-btn" aria-label="다음 달">›</button>
+    </div>
+
+    <div class="dow-header">
+      <span class="dow sun">일</span><span class="dow">월</span><span class="dow">화</span>
+      <span class="dow">수</span><span class="dow">목</span><span class="dow">금</span><span class="dow sat">토</span>
+    </div>
+
+    <div class="calendar-grid" id="calendar-grid"></div>
+
+    <p id="no-goal-warning" class="empty-text hidden">
+      아직 설정된 목표가 없어요. <a href="#" id="link-add-first-goal">설정에서 목표를 추가</a>해보세요.
+    </p>
+  </section>
+
+  <!-- ===== 설정 화면 ===== -->
+  <section id="screen-settings" class="screen hidden">
+    <header class="topbar">
+      <button id="btn-back-calendar" class="icon-btn">‹ 캘린더</button>
+      <h2 class="topbar-title">설정</h2>
+      <span class="topbar-spacer"></span>
+    </header>
+
+    <div class="settings-content">
+      <div class="settings-block">
+        <div class="settings-block-header">
+          <h3>내 목표 목록</h3>
+          <button id="btn-add-goal" class="btn btn-primary btn-sm">+ 목표 추가</button>
+        </div>
+        <ul id="goal-list" class="goal-list"></ul>
+        <p id="goal-list-empty" class="empty-text hidden">등록된 목표가 없습니다.</p>
+      </div>
+
+      <div class="settings-block">
+        <h3>계정</h3>
+        <p class="hint-text">현재 접속 코드로 로그인 중입니다.</p>
+        <button id="btn-change-code" class="btn btn-secondary">접속 코드 변경</button>
+      </div>
+
+      <div class="settings-block hidden" id="admin-block">
+        <div class="settings-block-header">
+          <h3>사용자 관리 <span class="admin-tag">관리자</span></h3>
+          <button id="btn-add-user" class="btn btn-primary btn-sm">+ 사용자 추가</button>
+        </div>
+        <ul id="user-list" class="user-list"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== 모달 오버레이 ===== -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+
+    <!-- 날짜별 목표 체크 모달 -->
+    <div id="modal-day" class="modal hidden">
+      <div class="modal-header">
+        <h3 id="modal-day-title"></h3>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <ul id="modal-goal-list" class="modal-goal-list"></ul>
+        <p id="modal-no-goals" class="empty-text hidden">이 날에 해당하는 목표가 없습니다.</p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-save-day" class="btn btn-primary btn-block">완료 저장</button>
+      </div>
+    </div>
+
+    <!-- 목표 추가/수정 모달 -->
+    <div id="modal-add-goal" class="modal hidden">
+      <div class="modal-header">
+        <h3 id="add-goal-title-text">목표 추가</h3>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field-label">주기</label>
+        <div class="freq-tabs" id="freq-tabs">
+          <button type="button" class="freq-tab active" data-freq="daily">매일</button>
+          <button type="button" class="freq-tab" data-freq="weekly">주간(요일)</button>
+          <button type="button" class="freq-tab" data-freq="interval">사용자 지정 주기</button>
+        </div>
+
+        <div id="freq-weekly-options" class="freq-options hidden">
+          <div class="dow-select" id="dow-select">
+            <label><input type="checkbox" value="0"><span>일</span></label>
+            <label><input type="checkbox" value="1"><span>월</span></label>
+            <label><input type="checkbox" value="2"><span>화</span></label>
+            <label><input type="checkbox" value="3"><span>수</span></label>
+            <label><input type="checkbox" value="4"><span>목</span></label>
+            <label><input type="checkbox" value="5"><span>금</span></label>
+            <label><input type="checkbox" value="6"><span>토</span></label>
+          </div>
+        </div>
+
+        <div id="freq-interval-options" class="freq-options hidden">
+          <label class="field-label">며칠마다 반복할까요?</label>
+          <div class="interval-row">
+            <input type="number" id="interval-days" min="2" max="365" value="3" />
+            <span>일마다</span>
+          </div>
+        </div>
+
+        <label class="field-label" for="goal-title">제목</label>
+        <input type="text" id="goal-title" maxlength="40" placeholder="예: 영단어 30개 외우기" />
+
+        <label class="field-label" for="goal-desc">설명</label>
+        <textarea id="goal-desc" rows="3" placeholder="목표에 대한 설명 (선택)"></textarea>
+
+        <p id="add-goal-error" class="error-text"></p>
+      </div>
+      <div class="modal-footer modal-footer-split">
+        <button id="btn-delete-goal" class="btn btn-danger hidden">삭제</button>
+        <button id="btn-save-goal" class="btn btn-primary">저장</button>
+      </div>
+    </div>
+
+    <!-- 접속 코드 변경 모달 -->
+    <div id="modal-change-code" class="modal hidden">
+      <div class="modal-header">
+        <h3>접속 코드 변경</h3>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="hint-text">새 4자리 코드를 입력하세요 (영문/숫자 조합 가능).<br>변경 후 자동으로 로그아웃되며, 새 코드로 다시 접속해야 합니다.</p>
+        <input id="new-code-input" maxlength="4" class="code-input" placeholder="- - - -" />
+        <p id="change-code-error" class="error-text"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-confirm-change-code" class="btn btn-primary btn-block">변경하기</button>
+      </div>
+    </div>
+
+    <!-- 사용자 추가 모달 (관리자) -->
+    <div id="modal-add-user" class="modal hidden">
+      <div class="modal-header">
+        <h3>사용자 추가</h3>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field-label" for="new-user-name">이름</label>
+        <input type="text" id="new-user-name" maxlength="20" placeholder="사용자 이름" />
+
+        <label class="field-label">임시 접속 코드</label>
+        <div class="code-gen-row">
+          <input type="text" id="new-user-code" maxlength="4" class="code-input" placeholder="- - - -" />
+          <button id="btn-gen-code" type="button" class="btn btn-secondary btn-sm">자동생성</button>
+        </div>
+        <p class="hint-text">사용자는 로그인 후 설정에서 이 코드를 직접 변경할 수 있습니다.</p>
+        <p id="add-user-error" class="error-text"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-confirm-add-user" class="btn btn-primary btn-block">추가하기</button>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
