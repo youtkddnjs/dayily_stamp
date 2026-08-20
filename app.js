@@ -298,10 +298,11 @@
       const li = document.createElement("li");
       li.className = "modal-goal-item";
       const checked = isDone(user.id, g.id, dateStr) ? "checked" : "";
+      const isRequired = g.required !== false;
       li.innerHTML = `
         <input type="checkbox" data-goal-id="${g.id}" ${checked} />
         <div class="modal-goal-item-text">
-          <span class="modal-goal-item-title">${escapeHtml(g.title)}</span>
+          <span class="modal-goal-item-title">${escapeHtml(g.title)}${isRequired ? '<span class="required-tag">필수</span>' : '<span class="optional-tag">선택</span>'}</span>
           ${g.description ? `<span class="modal-goal-item-desc">${escapeHtml(g.description)}</span>` : ""}
         </div>
       `;
@@ -350,9 +351,10 @@
     goals.forEach((g) => {
       const li = document.createElement("li");
       li.className = "goal-item";
+      const isRequired = g.required !== false;
       li.innerHTML = `
         <div class="goal-item-main">
-          <span class="goal-item-title">${escapeHtml(g.title)}</span>
+          <span class="goal-item-title">${escapeHtml(g.title)}${isRequired ? '<span class="required-tag">필수</span>' : '<span class="optional-tag">선택</span>'}</span>
           <span class="goal-item-freq">${freqLabel(g)}</span>
         </div>
         <span>›</span>
@@ -416,6 +418,7 @@
         cb.checked = (g.daysOfWeek || []).includes(parseInt(cb.value, 10));
       });
       $("#interval-days").value = g.intervalDays || 3;
+      $("#goal-required").checked = g.required !== false;
       deleteBtn.classList.remove("hidden");
     } else {
       $("#add-goal-title-text").textContent = "목표 추가";
@@ -424,6 +427,7 @@
       setFreqTab("daily");
       $$("#dow-select input").forEach((cb) => (cb.checked = false));
       $("#interval-days").value = 3;
+      $("#goal-required").checked = true;
       deleteBtn.classList.add("hidden");
     }
     openModal("addGoal");
@@ -449,6 +453,7 @@
     }
 
     const goals = loadGoals();
+    const required = $("#goal-required").checked;
 
     if (state.editingGoalId) {
       const idx = goals.findIndex((g) => g.id === state.editingGoalId);
@@ -458,6 +463,7 @@
         goals[idx].freqType = state.currentFreq;
         goals[idx].daysOfWeek = daysOfWeek;
         goals[idx].intervalDays = intervalDays;
+        goals[idx].required = required;
       }
     } else {
       goals.push({
@@ -468,6 +474,7 @@
         freqType: state.currentFreq,
         daysOfWeek,
         intervalDays,
+        required,
         startDate: todayStr(),
         createdAt: todayStr(),
       });

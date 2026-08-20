@@ -325,6 +325,44 @@ html, body {
 .interval-row { display: flex; align-items: center; gap: 8px; }
 .interval-row input { width: 90px; }
 
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 8px;
+  background: #fafbff;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.checkbox-row input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; accent-color: var(--color-primary); }
+.checkbox-row em { display: block; font-style: normal; color: var(--color-text-muted); font-size: 12px; margin-top: 2px; }
+
+.required-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #b23b3b;
+  background: #fdecec;
+  padding: 1px 7px;
+  border-radius: 20px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.optional-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background: #eef0f5;
+  padding: 1px 7px;
+  border-radius: 20px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 .modal-goal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .modal-goal-item {
   display: flex;
