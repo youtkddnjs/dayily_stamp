@@ -142,6 +142,13 @@ try {
   async function updateUserCode(userId, newCode) {
     await updatePassword(auth.currentUser, derivePassword(newCode));
     await updateDoc(doc(db, "users", userId), { code: newCode });
+    // 호출부에서 곧바로 signOut()을 이어서 부르는데, Firestore의 실시간 리스너가 이 변경사항을
+    // usersCache에 반영하기 "전에" 로그아웃이 먼저 일어나면 곧바로 새 코드로 재로그인했을 때
+    // "일치하는 사용자를 찾을 수 없습니다" 오류가 날 수 있습니다(리스너 갱신은 비동기라 타이밍을
+    // 보장할 수 없음). 이를 방지하기 위해 로컬 캐시도 즉시 함께 갱신해 이 경쟁 상태를 없앱니다.
+    // (나중에 리스너가 같은 값을 다시 전달해도 동일한 값이라 문제 없습니다.)
+    const cached = usersCache.find((u) => u.id === userId);
+    if (cached) cached.code = newCode;
   }
 
   async function createGoal(goalData) {
