@@ -106,6 +106,58 @@
     );
   }
 
+  // 특정 연/월의 달성률 통계. 목표 생성일이 해당 월 중간이면 goalAppliesOnDate가
+  // startDate 이전 날짜를 자연스럽게 제외하므로 별도 보정 없이 생성일 기준으로 계산됩니다.
+  // 아직 오지 않은 미래 날짜는 집계에서 제외합니다.
+  function monthStats(userId, year, month) {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayS = todayStr();
+    let applicableDays = 0;
+    let fullyDoneDays = 0;
+    let slotsTotal = 0;
+    let slotsDone = 0;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateStr = `${year}-${pad2(month + 1)}-${pad2(day)}`;
+      if (dateStr > todayS) break; // 미래 날짜는 집계하지 않음
+      const goals = goalsForUserOnDate(userId, dateStr);
+      if (goals.length === 0) continue; // 목표가 없던 날(계정/목표 생성 이전 포함)은 분모에서 제외
+      applicableDays++;
+      const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
+      slotsTotal += goals.length;
+      slotsDone += doneCount;
+      if (doneCount === goals.length) fullyDoneDays++;
+    }
+
+    const rate = slotsTotal > 0 ? Math.round((slotsDone / slotsTotal) * 100) : null;
+    return { applicableDays, fullyDoneDays, slotsTotal, slotsDone, rate };
+  }
+
+  // 오늘(또는 목표가 있던 가장 최근 날짜)부터 거슬러 올라가며 모든 목표를 완료한 날의 연속 일수.
+  // 아직 진행 중인 오늘/가장 최근 날짜가 미완료여도 스트릭을 끊지 않고 건너뜁니다.
+  function currentStreak(userId) {
+    let streak = 0;
+    const cursor = new Date();
+    let seenFirstApplicable = false;
+
+    for (let i = 0; i < 3650; i++) {
+      const dateStr = todayStr(cursor);
+      const goals = goalsForUserOnDate(userId, dateStr);
+      if (goals.length > 0) {
+        const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
+        const fullyDone = doneCount === goals.length;
+        if (fullyDone) {
+          streak++;
+        } else if (seenFirstApplicable) {
+          break;
+        }
+        seenFirstApplicable = true;
+      }
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
   function setDone(userId, goalId, dateStr, done) {
     let comps = loadCompletions();
     const idx = comps.findIndex((c) => c.userId === userId && c.goalId === goalId && c.date === dateStr);
@@ -135,21 +187,55 @@
     editingGoalId: null, // null = 새 목표, 값 있으면 수정
     currentFreq: "daily",
   };
+  const dashState = {
+    year: new Date().getFullYear(),
+    month: new Date().getMonth(),
+  };
 
   /* ---------------- DOM refs ---------------- */
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-  const screens = {
-    login: $("#screen-login"),
+  const appShell = $("#app-shell");
+  const loginScreen = $("#screen-login");
+  const innerScreens = {
     calendar: $("#screen-calendar"),
+    dashboard: $("#screen-dashboard"),
     settings: $("#screen-settings"),
   };
+  const SCREEN_TITLES = { calendar: "캘린더", dashboard: "현황판", settings: "설정" };
 
   function showScreen(name) {
-    Object.values(screens).forEach((el) => el.classList.add("hidden"));
-    screens[name].classList.remove("hidden");
+    if (name === "login") {
+      appShell.classList.add("hidden");
+      loginScreen.classList.remove("hidden");
+      return;
+    }
+    loginScreen.classList.add("hidden");
+    appShell.classList.remove("hidden");
+    Object.keys(innerScreens).forEach((key) => {
+      innerScreens[key].classList.toggle("hidden", key !== name);
+    });
+    $("#screen-title-label").textContent = SCREEN_TITLES[name] || "";
+    $$(".side-nav-btn[data-screen]").forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.screen === name);
+    });
   }
+
+  $$(".side-nav-btn[data-screen]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.screen;
+      if (name === "calendar") { renderCalendar(); renderMyStat(); }
+      if (name === "dashboard") renderDashboard();
+      if (name === "settings") renderSettings();
+      showScreen(name);
+    });
+  });
+
+  $("#btn-logout-side").addEventListener("click", () => {
+    clearSession();
+    showScreen("login");
+  });
 
   /* ---------------- Modal helpers ---------------- */
   const modalOverlay = $("#modal-overlay");
@@ -198,28 +284,16 @@
   $("#btn-login").addEventListener("click", doLogin);
   loginCodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
 
-  $("#btn-logout").addEventListener("click", () => {
-    clearSession();
-    showScreen("login");
-  });
-
   function enterApp() {
     const user = getCurrentUser();
     if (!user) { showScreen("login"); return; }
     $("#current-user-name").textContent = user.name + (user.isAdmin ? " (관리자)" : "");
-    showScreen("calendar");
     renderCalendar();
+    renderMyStat();
+    showScreen("calendar");
   }
 
   /* ---------------- 화면 전환 ---------------- */
-  $("#btn-goto-settings").addEventListener("click", () => {
-    renderSettings();
-    showScreen("settings");
-  });
-  $("#btn-back-calendar").addEventListener("click", () => {
-    renderCalendar();
-    showScreen("calendar");
-  });
   $("#link-add-first-goal").addEventListener("click", (e) => {
     e.preventDefault();
     renderSettings();
@@ -281,6 +355,26 @@
     $("#no-goal-warning").classList.toggle("hidden", allGoals.length > 0);
   }
 
+  /* ---------------- 개인 달성률 카드 (이번 달 기준, 캘린더 탐색과 무관) ---------------- */
+  function renderMyStat() {
+    const user = getCurrentUser();
+    if (!user) return;
+    const now = new Date();
+    const stats = monthStats(user.id, now.getFullYear(), now.getMonth());
+    const streak = currentStreak(user.id);
+
+    if (stats.rate == null) {
+      $("#my-stat-value").textContent = "—";
+      $("#my-stat-bar").style.width = "0%";
+      $("#my-stat-sub").textContent = "이번 달 아직 진행할 목표가 없어요.";
+    } else {
+      $("#my-stat-value").textContent = stats.rate + "%";
+      $("#my-stat-bar").style.width = stats.rate + "%";
+      $("#my-stat-sub").textContent = `${stats.slotsDone}/${stats.slotsTotal} 목표 완료 · 완전 달성 ${stats.fullyDoneDays}/${stats.applicableDays}일`;
+    }
+    $("#my-stat-streak").textContent = `🔥 연속 ${streak}일`;
+  }
+
   /* ---------------- 날짜별 목표 체크 모달 ---------------- */
   function openDayModal(dateStr) {
     const user = getCurrentUser();
@@ -320,6 +414,7 @@
     });
     closeModal();
     renderCalendar();
+    renderMyStat();
   });
 
   function escapeHtml(str) {
@@ -380,6 +475,48 @@
           <span class="user-item-code">코드: ${escapeHtml(u.code)}</span>
         </div>
         ${u.isAdmin ? '<span class="user-item-admin-badge">관리자</span>' : ""}
+      `;
+      list.appendChild(li);
+    });
+  }
+
+  /* ---------------- 현황판 화면 (전체 참여자) ---------------- */
+  $("#btn-dash-prev-month").addEventListener("click", () => {
+    dashState.month--;
+    if (dashState.month < 0) { dashState.month = 11; dashState.year--; }
+    renderDashboard();
+  });
+  $("#btn-dash-next-month").addEventListener("click", () => {
+    dashState.month++;
+    if (dashState.month > 11) { dashState.month = 0; dashState.year++; }
+    renderDashboard();
+  });
+
+  function renderDashboard() {
+    $("#dashboard-month-title").textContent = `${dashState.year}년 ${dashState.month + 1}월`;
+
+    const users = loadUsers();
+    const list = $("#dashboard-user-list");
+    list.innerHTML = "";
+
+    users.forEach((u) => {
+      const stats = monthStats(u.id, dashState.year, dashState.month);
+      const streak = currentStreak(u.id);
+      const rateText = stats.rate == null ? "—" : stats.rate + "%";
+      const barWidth = stats.rate == null ? 0 : stats.rate;
+
+      const li = document.createElement("li");
+      li.className = "dashboard-item";
+      li.innerHTML = `
+        <div class="dashboard-item-top">
+          <span class="dashboard-item-name">${escapeHtml(u.name)}${u.isAdmin ? '<span class="admin-tag">관리자</span>' : ""}</span>
+          <span class="dashboard-item-rate">${rateText}</span>
+        </div>
+        <div class="dashboard-bar-wrap"><div class="dashboard-bar" style="width:${barWidth}%"></div></div>
+        <div class="dashboard-item-sub">
+          <span>${stats.slotsTotal ? `${stats.slotsDone}/${stats.slotsTotal} 목표 완료` : "이 달에 진행할 목표 없음"}</span>
+          <span class="streak-badge">🔥 연속 ${streak}일</span>
+        </div>
       `;
       list.appendChild(li);
     });
@@ -564,6 +701,90 @@
     saveUsers(users);
     closeModal();
     renderUserList();
+  });
+
+  /* ---------------- 데이터 백업 및 복구 (내 계정 전용) ---------------- */
+  const BACKUP_SIGNATURE = "daily-study-stamp-backup";
+  const BACKUP_VERSION = 1;
+
+  $("#btn-backup").addEventListener("click", () => {
+    const user = getCurrentUser();
+    if (!user) return;
+    const goals = loadGoals().filter((g) => g.userId === user.id);
+    const completions = loadCompletions().filter((c) => c.userId === user.id);
+    const payload = {
+      app: BACKUP_SIGNATURE,
+      version: BACKUP_VERSION,
+      exportedAt: todayStr(),
+      userName: user.name,
+      goals,
+      completions,
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `study-stamp-backup-${user.name}-${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+
+    $("#backup-msg").textContent = `백업 파일이 다운로드되었습니다. (목표 ${goals.length}개, 완료기록 ${completions.length}건)`;
+  });
+
+  $("#btn-restore").addEventListener("click", () => {
+    $("#backup-msg").textContent = "";
+    $("#restore-file-input").click();
+  });
+
+  $("#restore-file-input").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try {
+        data = JSON.parse(reader.result);
+      } catch (err) {
+        alert("파일을 읽을 수 없습니다. 올바른 백업(JSON) 파일인지 확인해주세요.");
+        e.target.value = "";
+        return;
+      }
+
+      if (data.app !== BACKUP_SIGNATURE || !Array.isArray(data.goals) || !Array.isArray(data.completions)) {
+        alert("이 앱의 백업 파일이 아닙니다.");
+        e.target.value = "";
+        return;
+      }
+
+      const confirmMsg =
+        `백업 파일 정보\n- 백업 계정: ${data.userName || "알 수 없음"}\n- 백업 일자: ${data.exportedAt || "알 수 없음"}\n` +
+        `- 목표 ${data.goals.length}개, 완료기록 ${data.completions.length}건\n\n` +
+        `현재 로그인된 계정의 기존 목표와 완료 기록을 이 백업 내용으로 모두 대체합니다. 계속할까요?`;
+      if (!confirm(confirmMsg)) {
+        e.target.value = "";
+        return;
+      }
+
+      const user = getCurrentUser();
+      const otherGoals = loadGoals().filter((g) => g.userId !== user.id);
+      const otherCompletions = loadCompletions().filter((c) => c.userId !== user.id);
+      const restoredGoals = data.goals.map((g) => ({ ...g, userId: user.id }));
+      const restoredCompletions = data.completions.map((c) => ({ ...c, userId: user.id }));
+
+      saveGoals(otherGoals.concat(restoredGoals));
+      saveCompletions(otherCompletions.concat(restoredCompletions));
+
+      $("#backup-msg").textContent = "복구가 완료되었습니다.";
+      e.target.value = "";
+      renderSettings();
+      renderCalendar();
+      renderMyStat();
+    };
+    reader.readAsText(file);
   });
 
   /* ---------------- 초기화 ---------------- */

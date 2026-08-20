@@ -22,69 +22,121 @@
     </div>
   </section>
 
-  <!-- ===== 캘린더(메인) 화면 ===== -->
-  <section id="screen-calendar" class="screen hidden">
-    <header class="topbar">
-      <div class="topbar-left">
+  <!-- ===== 로그인 후 전체 화면 (좌측 내비 + 콘텐츠) ===== -->
+  <div id="app-shell" class="app-shell hidden">
+
+    <!-- 좌측 내비게이션 -->
+    <nav class="side-nav">
+      <div class="side-nav-top">
+        <div class="side-nav-brand">📅</div>
+        <button type="button" class="side-nav-btn" data-screen="calendar">
+          <span class="side-nav-icon">🗓️</span><span class="side-nav-label">캘린더</span>
+        </button>
+        <button type="button" class="side-nav-btn" data-screen="dashboard">
+          <span class="side-nav-icon">📊</span><span class="side-nav-label">현황판</span>
+        </button>
+        <button type="button" class="side-nav-btn" data-screen="settings">
+          <span class="side-nav-icon">⚙️</span><span class="side-nav-label">설정</span>
+        </button>
+      </div>
+      <div class="side-nav-bottom">
+        <button type="button" class="side-nav-btn" id="btn-logout-side">
+          <span class="side-nav-icon">🚪</span><span class="side-nav-label">로그아웃</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="main-area">
+      <header class="main-topbar">
+        <h2 id="screen-title-label">캘린더</h2>
         <span class="user-badge" id="current-user-name"></span>
-      </div>
-      <div class="topbar-right">
-        <button id="btn-goto-settings" class="icon-btn" title="설정">⚙️ 설정</button>
-        <button id="btn-logout" class="icon-btn" title="로그아웃">로그아웃</button>
-      </div>
-    </header>
+      </header>
 
-    <div class="calendar-nav">
-      <button id="btn-prev-month" class="nav-btn" aria-label="이전 달">‹</button>
-      <h2 id="calendar-title"></h2>
-      <button id="btn-next-month" class="nav-btn" aria-label="다음 달">›</button>
-    </div>
-
-    <div class="dow-header">
-      <span class="dow sun">일</span><span class="dow">월</span><span class="dow">화</span>
-      <span class="dow">수</span><span class="dow">목</span><span class="dow">금</span><span class="dow sat">토</span>
-    </div>
-
-    <div class="calendar-grid" id="calendar-grid"></div>
-
-    <p id="no-goal-warning" class="empty-text hidden">
-      아직 설정된 목표가 없어요. <a href="#" id="link-add-first-goal">설정에서 목표를 추가</a>해보세요.
-    </p>
-  </section>
-
-  <!-- ===== 설정 화면 ===== -->
-  <section id="screen-settings" class="screen hidden">
-    <header class="topbar">
-      <button id="btn-back-calendar" class="icon-btn">‹ 캘린더</button>
-      <h2 class="topbar-title">설정</h2>
-      <span class="topbar-spacer"></span>
-    </header>
-
-    <div class="settings-content">
-      <div class="settings-block">
-        <div class="settings-block-header">
-          <h3>내 목표 목록</h3>
-          <button id="btn-add-goal" class="btn btn-primary btn-sm">+ 목표 추가</button>
+      <!-- ===== 캘린더(메인) 화면 ===== -->
+      <section id="screen-calendar" class="screen">
+        <div class="my-stat-card" id="my-stat-card">
+          <div class="my-stat-row">
+            <span class="my-stat-label">이번 달 내 달성률</span>
+            <span class="my-stat-value" id="my-stat-value">—</span>
+          </div>
+          <div class="my-stat-bar-wrap"><div class="my-stat-bar" id="my-stat-bar" style="width:0%"></div></div>
+          <div class="my-stat-row">
+            <span class="my-stat-sub" id="my-stat-sub"></span>
+            <span class="streak-badge" id="my-stat-streak">🔥 연속 0일</span>
+          </div>
         </div>
-        <ul id="goal-list" class="goal-list"></ul>
-        <p id="goal-list-empty" class="empty-text hidden">등록된 목표가 없습니다.</p>
-      </div>
 
-      <div class="settings-block">
-        <h3>계정</h3>
-        <p class="hint-text">현재 접속 코드로 로그인 중입니다.</p>
-        <button id="btn-change-code" class="btn btn-secondary">접속 코드 변경</button>
-      </div>
-
-      <div class="settings-block hidden" id="admin-block">
-        <div class="settings-block-header">
-          <h3>사용자 관리 <span class="admin-tag">관리자</span></h3>
-          <button id="btn-add-user" class="btn btn-primary btn-sm">+ 사용자 추가</button>
+        <div class="calendar-nav">
+          <button id="btn-prev-month" class="nav-btn" aria-label="이전 달">‹</button>
+          <h2 id="calendar-title"></h2>
+          <button id="btn-next-month" class="nav-btn" aria-label="다음 달">›</button>
         </div>
-        <ul id="user-list" class="user-list"></ul>
-      </div>
+
+        <div class="dow-header">
+          <span class="dow sun">일</span><span class="dow">월</span><span class="dow">화</span>
+          <span class="dow">수</span><span class="dow">목</span><span class="dow">금</span><span class="dow sat">토</span>
+        </div>
+
+        <div class="calendar-grid" id="calendar-grid"></div>
+
+        <p id="no-goal-warning" class="empty-text hidden">
+          아직 설정된 목표가 없어요. <a href="#" id="link-add-first-goal">설정에서 목표를 추가</a>해보세요.
+        </p>
+      </section>
+
+      <!-- ===== 현황판 화면 (참여자 전체 현황) ===== -->
+      <section id="screen-dashboard" class="screen hidden">
+        <p class="hint-text">참여자별 이번 달 달성률과 연속 목표 달성 현황을 확인할 수 있어요.</p>
+
+        <div class="calendar-nav">
+          <button id="btn-dash-prev-month" class="nav-btn" aria-label="이전 달">‹</button>
+          <h2 id="dashboard-month-title"></h2>
+          <button id="btn-dash-next-month" class="nav-btn" aria-label="다음 달">›</button>
+        </div>
+
+        <ul id="dashboard-user-list" class="dashboard-list"></ul>
+      </section>
+
+      <!-- ===== 설정 화면 ===== -->
+      <section id="screen-settings" class="screen hidden">
+        <div class="settings-content">
+          <div class="settings-block">
+            <div class="settings-block-header">
+              <h3>내 목표 목록</h3>
+              <button id="btn-add-goal" class="btn btn-primary btn-sm">+ 목표 추가</button>
+            </div>
+            <ul id="goal-list" class="goal-list"></ul>
+            <p id="goal-list-empty" class="empty-text hidden">등록된 목표가 없습니다.</p>
+          </div>
+
+          <div class="settings-block">
+            <h3>계정</h3>
+            <p class="hint-text">현재 접속 코드로 로그인 중입니다.</p>
+            <button id="btn-change-code" class="btn btn-secondary">접속 코드 변경</button>
+          </div>
+
+          <div class="settings-block">
+            <h3>데이터 백업 및 복구</h3>
+            <p class="hint-text">내 목표와 완료 기록을 파일로 저장해두거나, 저장해둔 파일로 다시 불러올 수 있습니다.</p>
+            <div class="backup-actions">
+              <button id="btn-backup" class="btn btn-secondary">⬇️ 백업 다운로드</button>
+              <button id="btn-restore" class="btn btn-secondary">⬆️ 백업 복구</button>
+              <input type="file" id="restore-file-input" accept="application/json" class="hidden" />
+            </div>
+            <p id="backup-msg" class="hint-text small"></p>
+          </div>
+
+          <div class="settings-block hidden" id="admin-block">
+            <div class="settings-block-header">
+              <h3>사용자 관리 <span class="admin-tag">관리자</span></h3>
+              <button id="btn-add-user" class="btn btn-primary btn-sm">+ 사용자 추가</button>
+            </div>
+            <ul id="user-list" class="user-list"></ul>
+          </div>
+        </div>
+      </section>
     </div>
-  </section>
+  </div>
 
   <!-- ===== 모달 오버레이 ===== -->
   <div id="modal-overlay" class="modal-overlay hidden">

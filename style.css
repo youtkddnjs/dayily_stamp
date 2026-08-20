@@ -38,6 +38,64 @@ html, body {
 .screen { padding: 20px 16px 40px; flex: 1; }
 .hidden { display: none !important; }
 
+/* ---------- 앱 셸 (좌측 내비 + 콘텐츠) ---------- */
+#app-shell.app-shell {
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  align-items: stretch;
+}
+.side-nav {
+  width: 72px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 14px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.side-nav-top { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.side-nav-brand { font-size: 22px; margin-bottom: 10px; }
+.side-nav-btn {
+  width: 60px;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+.side-nav-icon { font-size: 19px; }
+.side-nav-label { font-size: 10.5px; font-weight: 600; }
+.side-nav-btn:hover { background: var(--color-bg); }
+.side-nav-btn.active { background: #eef0fa; color: var(--color-primary-dark); }
+.side-nav-bottom { display: flex; flex-direction: column; align-items: center; }
+
+.main-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.main-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+}
+.main-topbar h2 { margin: 0; font-size: 18px; }
+
+.main-area .screen { padding: 8px 16px 40px; }
+
 /* ---------- 버튼 ---------- */
 .btn {
   border: none;
@@ -192,6 +250,48 @@ html, body {
 
 .empty-text { color: var(--color-text-muted); font-size: 13px; text-align: center; padding: 16px 8px; }
 .empty-text a { color: var(--color-primary); }
+
+/* ---------- 개인 달성률 카드 (캘린더 화면) ---------- */
+.my-stat-card {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.my-stat-row { display: flex; align-items: center; justify-content: space-between; }
+.my-stat-label { font-size: 13px; color: var(--color-text-muted); font-weight: 600; }
+.my-stat-value { font-size: 20px; font-weight: 800; color: var(--color-primary-dark); }
+.my-stat-bar-wrap { height: 8px; border-radius: 20px; background: var(--color-border); margin: 8px 0; overflow: hidden; }
+.my-stat-bar { height: 100%; background: linear-gradient(90deg, var(--color-primary), #7c8cf0); border-radius: 20px; transition: width 0.25s ease; }
+.my-stat-sub { font-size: 12px; color: var(--color-text-muted); }
+.streak-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #a8620b;
+  background: #fff3d6;
+  padding: 3px 9px;
+  border-radius: 20px;
+}
+
+/* ---------- 현황판 화면 ---------- */
+.dashboard-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.dashboard-item {
+  background: var(--color-surface);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+.dashboard-item-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.dashboard-item-name { font-weight: 700; font-size: 14.5px; }
+.dashboard-item-rate { font-weight: 800; font-size: 16px; color: var(--color-primary-dark); }
+.dashboard-bar-wrap { height: 8px; border-radius: 20px; background: var(--color-border); overflow: hidden; }
+.dashboard-bar { height: 100%; background: linear-gradient(90deg, var(--color-success), #6fd6a4); border-radius: 20px; }
+.dashboard-item-sub { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--color-text-muted); }
+
+/* ---------- 백업/복구 ---------- */
+.backup-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.backup-actions .btn { flex: 1; min-width: 130px; }
 
 /* ---------- 설정 화면 ---------- */
 .settings-content { display: flex; flex-direction: column; gap: 18px; }
@@ -382,4 +482,7 @@ html, body {
 
 @media (max-width: 360px) {
   .modal-goal-item-desc { display: none; }
+  .side-nav { width: 58px; }
+  .side-nav-btn { width: 48px; }
+  .side-nav-label { font-size: 9.5px; }
 }
