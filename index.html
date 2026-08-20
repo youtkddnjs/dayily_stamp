@@ -9,6 +9,13 @@
 <body>
 <div id="app">
 
+  <!-- ===== 서버 연결 대기 오버레이 ===== -->
+  <div id="boot-overlay" class="boot-overlay">
+    <div class="boot-spinner"></div>
+    <p id="boot-status-text">서버에 연결하는 중...</p>
+    <p id="boot-error" class="error-text hidden"></p>
+  </div>
+
   <!-- ===== 로그인 화면 ===== -->
   <section id="screen-login" class="screen">
     <div class="card login-card">
@@ -251,6 +258,6 @@
   </div>
 
 </div>
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

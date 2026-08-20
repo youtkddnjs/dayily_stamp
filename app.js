@@ -1,19 +1,51 @@
 /* =========================================================
    매일 공부 스탬프 — app.js
-   순수 클라이언트(정적) 웹앱: 모든 데이터는 브라우저 localStorage에 저장됩니다.
+   Firebase Firestore를 데이터 저장소로 사용하는 정적 웹앱입니다.
+   (기기별 localStorage가 아니라, 모든 기기가 같은 Firestore 프로젝트를 공유합니다.)
    GitHub Pages 등 정적 호스팅에서 그대로 동작합니다.
    ========================================================= */
 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import {
+  getAuth,
+  signInAnonymously,
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  collection,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  writeBatch,
+  runTransaction,
+  enableIndexedDbPersistence,
+} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCPB4ifkXy0-SO88G94PBKAit1kHCm5x1c",
+  authDomain: "dailystamp-b8c37.firebaseapp.com",
+  projectId: "dailystamp-b8c37",
+  storageBucket: "dailystamp-b8c37.firebasestorage.app",
+  messagingSenderId: "24149820298",
+  appId: "1:24149820298:web:271b2cd2a3a14f7b75be73",
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+
+try {
+  // 오프라인에서도 최근 데이터를 볼 수 있고, 재접속 시 자동 동기화됩니다.
+  // 같은 브라우저에서 탭을 여러 개 열면 실패할 수 있는데, 그 경우엔 그냥 무시합니다.
+  await enableIndexedDbPersistence(db).catch(() => {});
+} catch (err) {
+  /* no-op */
+}
+
 (function () {
   "use strict";
-
-  /* ---------------- Storage Keys ---------------- */
-  const DB = {
-    USERS: "dss_users",
-    GOALS: "dss_goals",
-    COMPLETIONS: "dss_completions",
-    SESSION: "dss_session",
-  };
 
   /* ---------------- Utils ---------------- */
   function genId(prefix) {
@@ -46,36 +78,114 @@
     return /^[a-z0-9]{4}$/i.test(code);
   }
 
-  /* ---------------- Storage Access ---------------- */
-  function loadUsers() { return JSON.parse(localStorage.getItem(DB.USERS) || "[]"); }
-  function saveUsers(v) { localStorage.setItem(DB.USERS, JSON.stringify(v)); }
-  function loadGoals() { return JSON.parse(localStorage.getItem(DB.GOALS) || "[]"); }
-  function saveGoals(v) { localStorage.setItem(DB.GOALS, JSON.stringify(v)); }
-  function loadCompletions() { return JSON.parse(localStorage.getItem(DB.COMPLETIONS) || "[]"); }
-  function saveCompletions(v) { localStorage.setItem(DB.COMPLETIONS, JSON.stringify(v)); }
+  function completionDocId(userId, goalId, dateStr) {
+    return `${userId}__${goalId}__${dateStr}`;
+  }
 
-  function getSession() { return JSON.parse(localStorage.getItem(DB.SESSION) || "null"); }
-  function setSession(userId) { localStorage.setItem(DB.SESSION, JSON.stringify({ userId })); }
-  function clearSession() { localStorage.removeItem(DB.SESSION); }
+  /* ---------------- Firestore 캐시 (실시간 동기화) ---------------- */
+  let usersCache = [];
+  let goalsCache = [];
+  let completionsCache = [];
 
-  function initDB() {
-    const users = loadUsers();
-    if (users.length === 0) {
-      users.push({
-        id: genId("u"),
+  function loadUsers() { return usersCache; }
+  function loadGoals() { return goalsCache; }
+  function loadCompletions() { return completionsCache; }
+
+  // 로그인 세션(이 기기에서 현재 누구로 로그인했는지)만 기기별 localStorage에 남깁니다.
+  function getSession() { return JSON.parse(localStorage.getItem("dss_session") || "null"); }
+  function setSession(userId) { localStorage.setItem("dss_session", JSON.stringify({ userId })); }
+  function clearSession() { localStorage.removeItem("dss_session"); }
+
+  function getCurrentUser() {
+    const s = getSession();
+    if (!s) return null;
+    return usersCache.find((u) => u.id === s.userId) || null;
+  }
+
+  /* ---------------- Firestore 쓰기 함수 ---------------- */
+  async function ensureAdminSeed() {
+    const metaRef = doc(db, "meta", "init");
+    const adminRef = doc(db, "users", "admin");
+    await runTransaction(db, async (tx) => {
+      const metaSnap = await tx.get(metaRef);
+      if (metaSnap.exists() && metaSnap.data().initialized) return;
+      tx.set(adminRef, {
         name: "관리자",
         code: "a111",
         isAdmin: true,
         createdAt: todayStr(),
       });
-      saveUsers(users);
+      tx.set(metaRef, { initialized: true, initializedAt: todayStr() });
+    });
+  }
+
+  async function createUser(userData) {
+    const id = genId("u");
+    await setDoc(doc(db, "users", id), userData);
+    return id;
+  }
+
+  async function updateUserCode(userId, newCode) {
+    await updateDoc(doc(db, "users", userId), { code: newCode });
+  }
+
+  async function createGoal(goalData) {
+    const id = genId("g");
+    await setDoc(doc(db, "goals", id), goalData);
+    return id;
+  }
+
+  async function updateGoal(goalId, patch) {
+    await updateDoc(doc(db, "goals", goalId), patch);
+  }
+
+  async function deleteGoalAndCompletions(goalId) {
+    const relatedCompletions = completionsCache.filter((c) => c.goalId === goalId);
+    const batch = writeBatch(db);
+    batch.delete(doc(db, "goals", goalId));
+    relatedCompletions.forEach((c) => {
+      batch.delete(doc(db, "completions", completionDocId(c.userId, c.goalId, c.date)));
+    });
+    await batch.commit();
+  }
+
+  async function setDone(userId, goalId, dateStr, done) {
+    const ref = doc(db, "completions", completionDocId(userId, goalId, dateStr));
+    if (done) {
+      await setDoc(ref, { userId, goalId, date: dateStr, done: true });
+    } else {
+      await deleteDoc(ref);
     }
   }
 
-  function getCurrentUser() {
-    const s = getSession();
-    if (!s) return null;
-    return loadUsers().find((u) => u.id === s.userId) || null;
+  // 백업 파일로 특정 사용자의 목표+완료기록을 통째로 대체합니다. (일괄 batch, 500건 단위 분할)
+  async function restoreUserData(userId, backupGoals, backupCompletions) {
+    const existingGoals = goalsCache.filter((g) => g.userId === userId);
+    const existingCompletions = completionsCache.filter((c) => c.userId === userId);
+
+    const ops = [];
+    existingGoals.forEach((g) => ops.push({ type: "delete", ref: doc(db, "goals", g.id) }));
+    existingCompletions.forEach((c) =>
+      ops.push({ type: "delete", ref: doc(db, "completions", completionDocId(c.userId, c.goalId, c.date)) })
+    );
+    backupGoals.forEach((g) => {
+      const { id, ...rest } = g;
+      const goalId = id || genId("g");
+      ops.push({ type: "set", ref: doc(db, "goals", goalId), data: { ...rest, userId } });
+    });
+    backupCompletions.forEach((c) => {
+      const newC = { userId, goalId: c.goalId, date: c.date, done: true };
+      ops.push({ type: "set", ref: doc(db, "completions", completionDocId(userId, newC.goalId, newC.date)), data: newC });
+    });
+
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = writeBatch(db);
+      ops.slice(i, i + 400).forEach((op) => {
+        if (op.type === "delete") batch.delete(op.ref);
+        else batch.set(op.ref, op.data);
+      });
+      await batch.commit();
+    }
   }
 
   /* ---------------- Domain Logic ---------------- */
@@ -104,6 +214,15 @@
     return loadCompletions().some(
       (c) => c.userId === userId && c.goalId === goalId && c.date === dateStr && c.done
     );
+  }
+
+  function dayStatus(userId, dateStr) {
+    const goals = goalsForUserOnDate(userId, dateStr);
+    if (goals.length === 0) return "none";
+    const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
+    if (doneCount === 0) return "has-goals";
+    if (doneCount === goals.length) return "done";
+    return "partial";
   }
 
   // 특정 연/월의 달성률 통계. 목표 생성일이 해당 월 중간이면 goalAppliesOnDate가
@@ -158,27 +277,6 @@
     return streak;
   }
 
-  function setDone(userId, goalId, dateStr, done) {
-    let comps = loadCompletions();
-    const idx = comps.findIndex((c) => c.userId === userId && c.goalId === goalId && c.date === dateStr);
-    if (done) {
-      if (idx >= 0) comps[idx].done = true;
-      else comps.push({ userId, goalId, date: dateStr, done: true });
-    } else if (idx >= 0) {
-      comps.splice(idx, 1);
-    }
-    saveCompletions(comps);
-  }
-
-  function dayStatus(userId, dateStr) {
-    const goals = goalsForUserOnDate(userId, dateStr);
-    if (goals.length === 0) return "none";
-    const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
-    if (doneCount === 0) return "has-goals";
-    if (doneCount === goals.length) return "done";
-    return "partial";
-  }
-
   /* ---------------- App State ---------------- */
   const state = {
     viewYear: new Date().getFullYear(),
@@ -196,6 +294,9 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+  const bootOverlay = $("#boot-overlay");
+  const bootStatusText = $("#boot-status-text");
+  const bootErrorEl = $("#boot-error");
   const appShell = $("#app-shell");
   const loginScreen = $("#screen-login");
   const innerScreens = {
@@ -204,6 +305,16 @@
     settings: $("#screen-settings"),
   };
   const SCREEN_TITLES = { calendar: "캘린더", dashboard: "현황판", settings: "설정" };
+
+  function showBootError(msg) {
+    bootStatusText.textContent = "연결에 문제가 발생했어요.";
+    bootErrorEl.textContent = msg;
+    bootErrorEl.classList.remove("hidden");
+  }
+
+  function hideBootOverlay() {
+    bootOverlay.classList.add("hidden");
+  }
 
   function showScreen(name) {
     if (name === "login") {
@@ -220,6 +331,19 @@
     $$(".side-nav-btn[data-screen]").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.screen === name);
     });
+  }
+
+  function activeScreenName() {
+    return Object.keys(innerScreens).find((key) => !innerScreens[key].classList.contains("hidden"));
+  }
+
+  // Firestore 실시간 업데이트가 들어올 때마다(다른 기기에서의 변경 포함) 현재 보이는 화면을 새로고침합니다.
+  function refreshCurrentScreen() {
+    if (appShell.classList.contains("hidden")) return; // 로그인 전에는 갱신할 화면 없음
+    const active = activeScreenName();
+    if (active === "calendar") { renderCalendar(); renderMyStat(); }
+    else if (active === "dashboard") renderDashboard();
+    else if (active === "settings") renderSettings();
   }
 
   $$(".side-nav-btn[data-screen]").forEach((btn) => {
@@ -406,15 +530,24 @@
     openModal("day");
   }
 
-  $("#btn-save-day").addEventListener("click", () => {
+  $("#btn-save-day").addEventListener("click", async () => {
     const user = getCurrentUser();
     const dateStr = state.modalDate;
-    $$("#modal-goal-list input[type=checkbox]").forEach((cb) => {
-      setDone(user.id, cb.dataset.goalId, dateStr, cb.checked);
-    });
-    closeModal();
-    renderCalendar();
-    renderMyStat();
+    const btn = $("#btn-save-day");
+    const checkboxes = $$("#modal-goal-list input[type=checkbox]");
+    btn.disabled = true;
+    btn.textContent = "저장 중...";
+    try {
+      await Promise.all(checkboxes.map((cb) => setDone(user.id, cb.dataset.goalId, dateStr, cb.checked)));
+      closeModal();
+      renderCalendar();
+      renderMyStat();
+    } catch (err) {
+      alert("저장에 실패했습니다. 네트워크 상태를 확인해주세요.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "완료 저장";
+    }
   });
 
   function escapeHtml(str) {
@@ -572,7 +705,7 @@
 
   $("#btn-add-goal").addEventListener("click", () => openGoalModal(null));
 
-  $("#btn-save-goal").addEventListener("click", () => {
+  $("#btn-save-goal").addEventListener("click", async () => {
     const user = getCurrentUser();
     const title = $("#goal-title").value.trim();
     const errEl = $("#add-goal-error");
@@ -589,50 +722,54 @@
       intervalDays = Math.max(2, parseInt($("#interval-days").value, 10) || 2);
     }
 
-    const goals = loadGoals();
     const required = $("#goal-required").checked;
+    const saveBtn = $("#btn-save-goal");
+    saveBtn.disabled = true;
 
-    if (state.editingGoalId) {
-      const idx = goals.findIndex((g) => g.id === state.editingGoalId);
-      if (idx >= 0) {
-        goals[idx].title = title;
-        goals[idx].description = $("#goal-desc").value.trim();
-        goals[idx].freqType = state.currentFreq;
-        goals[idx].daysOfWeek = daysOfWeek;
-        goals[idx].intervalDays = intervalDays;
-        goals[idx].required = required;
+    try {
+      if (state.editingGoalId) {
+        await updateGoal(state.editingGoalId, {
+          title,
+          description: $("#goal-desc").value.trim(),
+          freqType: state.currentFreq,
+          daysOfWeek,
+          intervalDays,
+          required,
+        });
+      } else {
+        await createGoal({
+          userId: user.id,
+          title,
+          description: $("#goal-desc").value.trim(),
+          freqType: state.currentFreq,
+          daysOfWeek,
+          intervalDays,
+          required,
+          startDate: todayStr(),
+          createdAt: todayStr(),
+        });
       }
-    } else {
-      goals.push({
-        id: genId("g"),
-        userId: user.id,
-        title,
-        description: $("#goal-desc").value.trim(),
-        freqType: state.currentFreq,
-        daysOfWeek,
-        intervalDays,
-        required,
-        startDate: todayStr(),
-        createdAt: todayStr(),
-      });
+      closeModal();
+      renderSettings();
+      renderCalendar();
+    } catch (err) {
+      errEl.textContent = "저장에 실패했습니다. 네트워크 상태를 확인해주세요.";
+    } finally {
+      saveBtn.disabled = false;
     }
-
-    saveGoals(goals);
-    closeModal();
-    renderSettings();
-    renderCalendar();
   });
 
-  $("#btn-delete-goal").addEventListener("click", () => {
+  $("#btn-delete-goal").addEventListener("click", async () => {
     if (!state.editingGoalId) return;
     if (!confirm("이 목표를 삭제하시겠습니까? 관련된 완료 기록도 함께 삭제됩니다.")) return;
-    const goals = loadGoals().filter((g) => g.id !== state.editingGoalId);
-    saveGoals(goals);
-    const comps = loadCompletions().filter((c) => c.goalId !== state.editingGoalId);
-    saveCompletions(comps);
-    closeModal();
-    renderSettings();
-    renderCalendar();
+    try {
+      await deleteGoalAndCompletions(state.editingGoalId);
+      closeModal();
+      renderSettings();
+      renderCalendar();
+    } catch (err) {
+      alert("삭제에 실패했습니다. 네트워크 상태를 확인해주세요.");
+    }
   });
 
   /* ---------------- 접속 코드 변경 ---------------- */
@@ -642,7 +779,7 @@
     openModal("changeCode");
   });
 
-  $("#btn-confirm-change-code").addEventListener("click", () => {
+  $("#btn-confirm-change-code").addEventListener("click", async () => {
     const user = getCurrentUser();
     const newCode = $("#new-code-input").value.trim();
     const errEl = $("#change-code-error");
@@ -651,19 +788,20 @@
       errEl.textContent = "영문/숫자 4자리로 입력해주세요.";
       return;
     }
-    const users = loadUsers();
-    const dup = users.find((u) => u.id !== user.id && u.code.toLowerCase() === newCode.toLowerCase());
+    const dup = loadUsers().find((u) => u.id !== user.id && u.code.toLowerCase() === newCode.toLowerCase());
     if (dup) {
       errEl.textContent = "이미 사용 중인 코드입니다. 다른 코드를 입력해주세요.";
       return;
     }
-    const idx = users.findIndex((u) => u.id === user.id);
-    users[idx].code = newCode;
-    saveUsers(users);
-    clearSession();
-    closeModal();
-    alert("접속 코드가 변경되었습니다. 새 코드로 다시 로그인해주세요.");
-    showScreen("login");
+    try {
+      await updateUserCode(user.id, newCode);
+      clearSession();
+      closeModal();
+      alert("접속 코드가 변경되었습니다. 새 코드로 다시 로그인해주세요.");
+      showScreen("login");
+    } catch (err) {
+      errEl.textContent = "변경에 실패했습니다. 네트워크 상태를 확인해주세요.";
+    }
   });
 
   /* ---------------- 관리자: 사용자 추가 ---------------- */
@@ -678,7 +816,7 @@
     $("#new-user-code").value = randomCode();
   });
 
-  $("#btn-confirm-add-user").addEventListener("click", () => {
+  $("#btn-confirm-add-user").addEventListener("click", async () => {
     const name = $("#new-user-name").value.trim();
     const code = $("#new-user-code").value.trim();
     const errEl = $("#add-user-error");
@@ -687,20 +825,16 @@
     if (!name) { errEl.textContent = "이름을 입력해주세요."; return; }
     if (!isValidCode(code)) { errEl.textContent = "영문/숫자 4자리 코드를 입력해주세요."; return; }
 
-    const users = loadUsers();
-    const dup = users.find((u) => u.code.toLowerCase() === code.toLowerCase());
+    const dup = loadUsers().find((u) => u.code.toLowerCase() === code.toLowerCase());
     if (dup) { errEl.textContent = "이미 사용 중인 코드입니다."; return; }
 
-    users.push({
-      id: genId("u"),
-      name,
-      code,
-      isAdmin: false,
-      createdAt: todayStr(),
-    });
-    saveUsers(users);
-    closeModal();
-    renderUserList();
+    try {
+      await createUser({ name, code, isAdmin: false, createdAt: todayStr() });
+      closeModal();
+      renderUserList();
+    } catch (err) {
+      errEl.textContent = "추가에 실패했습니다. 네트워크 상태를 확인해주세요.";
+    }
   });
 
   /* ---------------- 데이터 백업 및 복구 (내 계정 전용) ---------------- */
@@ -744,7 +878,7 @@
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       let data;
       try {
         data = JSON.parse(reader.result);
@@ -770,28 +904,78 @@
       }
 
       const user = getCurrentUser();
-      const otherGoals = loadGoals().filter((g) => g.userId !== user.id);
-      const otherCompletions = loadCompletions().filter((c) => c.userId !== user.id);
-      const restoredGoals = data.goals.map((g) => ({ ...g, userId: user.id }));
-      const restoredCompletions = data.completions.map((c) => ({ ...c, userId: user.id }));
-
-      saveGoals(otherGoals.concat(restoredGoals));
-      saveCompletions(otherCompletions.concat(restoredCompletions));
-
-      $("#backup-msg").textContent = "복구가 완료되었습니다.";
-      e.target.value = "";
-      renderSettings();
-      renderCalendar();
-      renderMyStat();
+      $("#backup-msg").textContent = "복구 중...";
+      try {
+        await restoreUserData(user.id, data.goals, data.completions);
+        $("#backup-msg").textContent = "복구가 완료되었습니다.";
+        renderSettings();
+        renderCalendar();
+        renderMyStat();
+      } catch (err) {
+        $("#backup-msg").textContent = "복구에 실패했습니다. 네트워크 상태를 확인해주세요.";
+      } finally {
+        e.target.value = "";
+      }
     };
     reader.readAsText(file);
   });
 
-  /* ---------------- 초기화 ---------------- */
-  document.addEventListener("DOMContentLoaded", () => {
-    initDB();
-    const user = getCurrentUser();
-    if (user) enterApp();
-    else showScreen("login");
-  });
+  /* ---------------- 초기화 (Firebase 인증 → 관리자 시드 → 실시간 리스너 → 진입) ---------------- */
+  let firstUsersSnapshotResolve;
+  const firstUsersSnapshotPromise = new Promise((resolve) => { firstUsersSnapshotResolve = resolve; });
+
+  function attachRealtimeListeners() {
+    onSnapshot(
+      collection(db, "users"),
+      (snap) => {
+        usersCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        if (firstUsersSnapshotResolve) { firstUsersSnapshotResolve(); firstUsersSnapshotResolve = null; }
+        refreshCurrentScreen();
+      },
+      () => { if (firstUsersSnapshotResolve) { firstUsersSnapshotResolve(); firstUsersSnapshotResolve = null; } }
+    );
+    onSnapshot(collection(db, "goals"), (snap) => {
+      goalsCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      refreshCurrentScreen();
+    });
+    onSnapshot(collection(db, "completions"), (snap) => {
+      completionsCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      refreshCurrentScreen();
+    });
+  }
+
+  async function boot() {
+    bootStatusText.textContent = "서버에 연결하는 중...";
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      showBootError(
+        "인증에 실패했습니다. Firebase 콘솔 → Authentication → Sign-in method에서 '익명' 로그인이 사용 설정되어 있는지 확인해주세요."
+      );
+      return;
+    }
+
+    try {
+      await ensureAdminSeed();
+    } catch (err) {
+      showBootError("초기 데이터 설정에 실패했습니다: " + (err && err.message ? err.message : err));
+      return;
+    }
+
+    attachRealtimeListeners();
+    await firstUsersSnapshotPromise;
+
+    hideBootOverlay();
+
+    const session = getSession();
+    if (session) {
+      const user = getCurrentUser();
+      if (user) enterApp();
+      else { clearSession(); showScreen("login"); }
+    } else {
+      showScreen("login");
+    }
+  }
+
+  boot();
 })();
