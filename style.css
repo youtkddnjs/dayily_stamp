@@ -26,7 +26,8 @@ html, body {
 }
 
 #app {
-  max-width: 480px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
   min-height: 100vh;
   background: var(--color-bg);
@@ -66,7 +67,8 @@ html, body {
 
 /* ---------- 앱 셸 (좌측 내비 + 콘텐츠) ---------- */
 #app-shell.app-shell {
-  max-width: 560px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
   min-height: 100vh;
   display: flex;
@@ -508,7 +510,79 @@ html, body {
 
 @media (max-width: 360px) {
   .modal-goal-item-desc { display: none; }
-  .side-nav { width: 58px; }
-  .side-nav-btn { width: 48px; }
   .side-nav-label { font-size: 9.5px; }
+}
+
+/* =========================================================
+   반응형: 화면 폭에 따라 레이아웃이 달라집니다.
+   - 767px 이하(휴대폰): 좌측 내비 대신 하단 탭 바
+   - 768px~1023px(태블릿): 좌측 내비 유지, 컨테이너 폭 확장
+   - 1024px 이상(데스크톱): 좌측 내비가 아이콘+라벨이 나란한
+     넓은 사이드바로 바뀌고, 콘텐츠 폭이 더 넓어짐
+   ========================================================= */
+
+/* ---------- 태블릿 이상 공통 ---------- */
+@media (min-width: 768px) {
+  #app-shell.app-shell { max-width: 760px; margin: 0 auto; }
+  .modal-overlay { align-items: center; padding: 24px; }
+  .modal { border-radius: 18px; max-height: 80vh; }
+}
+
+/* ---------- 데스크톱 ---------- */
+@media (min-width: 1024px) {
+  #app-shell.app-shell { max-width: 1080px; }
+  .side-nav {
+    width: 208px;
+    padding: 20px 12px;
+    align-items: stretch;
+  }
+  .side-nav-top { align-items: stretch; gap: 4px; }
+  .side-nav-brand { text-align: left; padding-left: 10px; margin-bottom: 18px; }
+  .side-nav-btn {
+    width: 100%;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .side-nav-icon { font-size: 18px; }
+  .side-nav-label { font-size: 13.5px; }
+  .side-nav-bottom { align-items: stretch; }
+  .main-topbar { padding: 20px 32px 8px; }
+  .main-area .screen {
+    max-width: 880px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 24px 32px 60px;
+  }
+  .dashboard-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }
+}
+
+/* ---------- 휴대폰: 좌측 내비 → 하단 탭 바 ---------- */
+@media (max-width: 767px) {
+  #app-shell.app-shell { flex-direction: column; }
+  .side-nav {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-around;
+    align-items: stretch;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    border-right: none;
+    border-top: 1px solid var(--color-border);
+    z-index: 50;
+  }
+  .side-nav-top, .side-nav-bottom { display: contents; }
+  .side-nav-brand { display: none; }
+  .side-nav-btn { width: auto; flex: 1; }
+  .main-area { padding-bottom: 68px; }
 }
