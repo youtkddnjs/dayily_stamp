@@ -124,6 +124,11 @@ try {
     }
   }
 
+  // 관리자 코드는 소스 코드 어디에도 고정된 값으로 들어있지 않습니다. 이 앱이 이 Firebase
+  // 프로젝트에서 "정말 처음" 실행되는 그 순간에만 무작위로 하나 생성해서 Firestore/Firebase
+  // Auth에 저장하고, 화면에 단 한 번만 보여준 뒤 잊어버립니다(반환값을 호출부에서 표시하고 나면
+  // 이 함수 밖 어디에도 남지 않습니다). 그 이후의 실행에서는 이미 초기화된 상태이므로 항상 null을
+  // 반환합니다.
   async function ensureAdminSeed() {
     const metaRef = doc(db, "meta", "init");
     // 1) Firestore 트랜잭션으로 "초기화 시작"을 원자적으로 선점합니다.
@@ -134,18 +139,20 @@ try {
       tx.set(metaRef, { initialized: true, initializedAt: todayStr() });
       return true;
     });
-    if (!claimed) return;
+    if (!claimed) return null;
 
     // 2) Auth 계정 생성은 트랜잭션 밖에서(Firestore 트랜잭션은 Auth를 다루지 못하므로) 진행합니다.
-    const authUid = await createAuthAccountFor("admin", "a111");
+    const initialCode = randomCode();
+    const authUid = await createAuthAccountFor("admin", initialCode);
     await setDoc(doc(db, "users", "admin"), {
       name: "관리자",
-      code: "a111",
+      code: initialCode,
       isAdmin: true,
       createdAt: todayStr(),
       authUid,
       authEmail: emailForUserId("admin"),
     });
+    return initialCode;
   }
 
   async function createUser(userData) {
@@ -350,6 +357,44 @@ try {
 
   function hideBootOverlay() {
     bootOverlay.classList.add("hidden");
+  }
+
+  /* ---------------- 최초 관리자 코드 1회 안내 ---------------- */
+  const adminSeedOverlay = $("#admin-seed-overlay");
+  const adminSeedCodeEl = $("#admin-seed-code");
+  const adminSeedAck = $("#admin-seed-ack");
+  const btnAdminSeedConfirm = $("#btn-admin-seed-confirm");
+  const btnCopyAdminCode = $("#btn-copy-admin-code");
+
+  adminSeedAck.addEventListener("change", () => {
+    btnAdminSeedConfirm.disabled = !adminSeedAck.checked;
+  });
+  btnCopyAdminCode.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(adminSeedCodeEl.textContent);
+      const original = btnCopyAdminCode.textContent;
+      btnCopyAdminCode.textContent = "복사됨 ✓";
+      setTimeout(() => { btnCopyAdminCode.textContent = original; }, 1500);
+    } catch (err) {
+      /* 클립보드 권한이 없으면 그냥 무시합니다. 화면에 보이는 코드를 직접 적으면 됩니다. */
+    }
+  });
+
+  // 관리자 코드가 이번 실행에서 막 생성된 경우에만 호출됩니다. 사용자가 "확인했습니다"를
+  // 누르기 전까지는 로그인 화면으로 넘어가지 않도록 Promise로 막아둡니다.
+  function showAdminSeedNotice(code) {
+    return new Promise((resolve) => {
+      adminSeedCodeEl.textContent = code;
+      adminSeedAck.checked = false;
+      btnAdminSeedConfirm.disabled = true;
+      adminSeedOverlay.classList.remove("hidden");
+      const onConfirm = () => {
+        adminSeedOverlay.classList.add("hidden");
+        btnAdminSeedConfirm.removeEventListener("click", onConfirm);
+        resolve();
+      };
+      btnAdminSeedConfirm.addEventListener("click", onConfirm);
+    });
   }
 
   function showScreen(name) {
@@ -1019,8 +1064,9 @@ try {
     if (firebaseUser.isAnonymous) {
       if (!bootedOnce) {
         bootedOnce = true;
+        let generatedAdminCode = null;
         try {
-          await ensureAdminSeed();
+          generatedAdminCode = await ensureAdminSeed();
         } catch (err) {
           showBootError("초기 데이터 설정에 실패했습니다: " + (err && err.message ? err.message : err));
           return;
@@ -1028,6 +1074,9 @@ try {
         attachRealtimeListeners();
         await firstUsersSnapshotPromise;
         hideBootOverlay();
+        if (generatedAdminCode) {
+          await showAdminSeedNotice(generatedAdminCode);
+        }
       }
       currentAppUser = null;
       showScreen("login");
