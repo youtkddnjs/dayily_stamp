@@ -5,10 +5,15 @@
    GitHub Pages 등 정적 호스팅에서 그대로 동작합니다.
    ========================================================= */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
 import {
   getAuth,
   signInAnonymously,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updatePassword,
+  signOut,
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
   getFirestore,
@@ -82,6 +87,12 @@ try {
     return `${userId}__${goalId}__${dateStr}`;
   }
 
+  // 4자리 코드를 Firebase Auth 비밀번호(6자 이상 필요)로 변환합니다. 코드만 알면 항상
+  // 같은 값이 나오므로 별도로 비밀번호를 저장/관리할 필요가 없습니다.
+  const AUTH_EMAIL_DOMAIN = "dailystamp.local";
+  function emailForUserId(userId) { return `${userId}@${AUTH_EMAIL_DOMAIN}`; }
+  function derivePassword(code) { return "stamp-" + code.toLowerCase(); }
+
   /* ---------------- Firestore 캐시 (실시간 동기화) ---------------- */
   let usersCache = [];
   let goalsCache = [];
@@ -91,41 +102,66 @@ try {
   function loadGoals() { return goalsCache; }
   function loadCompletions() { return completionsCache; }
 
-  // 로그인 세션(이 기기에서 현재 누구로 로그인했는지)만 기기별 localStorage에 남깁니다.
-  function getSession() { return JSON.parse(localStorage.getItem("dss_session") || "null"); }
-  function setSession(userId) { localStorage.setItem("dss_session", JSON.stringify({ userId })); }
-  function clearSession() { localStorage.removeItem("dss_session"); }
-
-  function getCurrentUser() {
-    const s = getSession();
-    if (!s) return null;
-    return usersCache.find((u) => u.id === s.userId) || null;
-  }
+  // 로그인 세션은 로컬(브라우저)에 저장하지 않습니다. 지금 로그인되어 있는 사람이
+  // 누구인지는 오직 Firebase Authentication의 로그인 상태(onAuthStateChanged)로만 판단합니다.
+  let currentAppUser = null;
+  function getCurrentUser() { return currentAppUser; }
 
   /* ---------------- Firestore 쓰기 함수 ---------------- */
+
+  // 관리자 계정을 만들면서 동시에 로그인 중인 사람(관리자 본인)의 세션이 끊기지 않도록,
+  // 보조(secondary) Firebase 앱 인스턴스를 잠깐 띄워 그 안에서만 계정을 생성합니다.
+  let secondaryAppSeq = 0;
+  async function createAuthAccountFor(userId, code) {
+    const secondaryApp = initializeApp(firebaseConfig, "secondary-" + Date.now() + "-" + (secondaryAppSeq++));
+    const secondaryAuth = getAuth(secondaryApp);
+    try {
+      const cred = await createUserWithEmailAndPassword(secondaryAuth, emailForUserId(userId), derivePassword(code));
+      return cred.user.uid;
+    } finally {
+      try { await signOut(secondaryAuth); } catch (e) { /* no-op */ }
+      try { await deleteApp(secondaryApp); } catch (e) { /* no-op */ }
+    }
+  }
+
   async function ensureAdminSeed() {
     const metaRef = doc(db, "meta", "init");
-    const adminRef = doc(db, "users", "admin");
-    await runTransaction(db, async (tx) => {
+    // 1) Firestore 트랜잭션으로 "초기화 시작"을 원자적으로 선점합니다.
+    //    (여러 기기가 동시에 최초 접속해도 관리자 계정이 중복 생성되지 않도록)
+    const claimed = await runTransaction(db, async (tx) => {
       const metaSnap = await tx.get(metaRef);
-      if (metaSnap.exists() && metaSnap.data().initialized) return;
-      tx.set(adminRef, {
-        name: "관리자",
-        code: "a111",
-        isAdmin: true,
-        createdAt: todayStr(),
-      });
+      if (metaSnap.exists() && metaSnap.data().initialized) return false;
       tx.set(metaRef, { initialized: true, initializedAt: todayStr() });
+      return true;
+    });
+    if (!claimed) return;
+
+    // 2) Auth 계정 생성은 트랜잭션 밖에서(Firestore 트랜잭션은 Auth를 다루지 못하므로) 진행합니다.
+    const authUid = await createAuthAccountFor("admin", "a111");
+    await setDoc(doc(db, "users", "admin"), {
+      name: "관리자",
+      code: "a111",
+      isAdmin: true,
+      createdAt: todayStr(),
+      authUid,
+      authEmail: emailForUserId("admin"),
     });
   }
 
   async function createUser(userData) {
     const id = genId("u");
-    await setDoc(doc(db, "users", id), userData);
+    const authUid = await createAuthAccountFor(id, userData.code);
+    await setDoc(doc(db, "users", id), {
+      ...userData,
+      authUid,
+      authEmail: emailForUserId(id),
+    });
     return id;
   }
 
+  // 본인 로그인 상태에서만 호출됩니다: Firestore의 code 필드와 Firebase Auth 비밀번호를 함께 갱신합니다.
   async function updateUserCode(userId, newCode) {
+    await updatePassword(auth.currentUser, derivePassword(newCode));
     await updateDoc(doc(db, "users", userId), { code: newCode });
   }
 
@@ -356,9 +392,8 @@ try {
     });
   });
 
-  $("#btn-logout-side").addEventListener("click", () => {
-    clearSession();
-    showScreen("login");
+  $("#btn-logout-side").addEventListener("click", async () => {
+    await signOut(auth); // onAuthStateChanged가 감지해서 로그인 화면으로 전환합니다.
   });
 
   /* ---------------- Modal helpers ---------------- */
@@ -388,7 +423,7 @@ try {
   const loginCodeInput = $("#login-code");
   const loginError = $("#login-error");
 
-  function doLogin() {
+  async function doLogin() {
     const code = loginCodeInput.value.trim();
     loginError.textContent = "";
     if (!isValidCode(code)) {
@@ -396,21 +431,30 @@ try {
       return;
     }
     const user = loadUsers().find((u) => u.code.toLowerCase() === code.toLowerCase());
-    if (!user) {
+    if (!user || !user.authEmail) {
       loginError.textContent = "일치하는 사용자를 찾을 수 없습니다.";
       return;
     }
-    setSession(user.id);
-    loginCodeInput.value = "";
-    enterApp();
+
+    const btn = $("#btn-login");
+    btn.disabled = true;
+    try {
+      // 실제 로그인은 Firebase Authentication으로 처리합니다. 성공하면 onAuthStateChanged가
+      // 감지해서 화면 전환까지 이어서 처리합니다(로컬에는 아무것도 저장하지 않습니다).
+      await signInWithEmailAndPassword(auth, user.authEmail, derivePassword(code));
+      loginCodeInput.value = "";
+    } catch (err) {
+      loginError.textContent = "로그인에 실패했습니다. 코드를 다시 확인해주세요.";
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   $("#btn-login").addEventListener("click", doLogin);
   loginCodeInput.addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
 
-  function enterApp() {
-    const user = getCurrentUser();
-    if (!user) { showScreen("login"); return; }
+  function enterApp(user) {
+    currentAppUser = user;
     $("#current-user-name").textContent = user.name + (user.isAdmin ? " (관리자)" : "");
     renderCalendar();
     renderMyStat();
@@ -795,12 +839,15 @@ try {
     }
     try {
       await updateUserCode(user.id, newCode);
-      clearSession();
       closeModal();
       alert("접속 코드가 변경되었습니다. 새 코드로 다시 로그인해주세요.");
-      showScreen("login");
+      await signOut(auth); // onAuthStateChanged가 로그인 화면 전환까지 처리합니다.
     } catch (err) {
-      errEl.textContent = "변경에 실패했습니다. 네트워크 상태를 확인해주세요.";
+      if (err && err.code === "auth/requires-recent-login") {
+        errEl.textContent = "보안을 위해 다시 로그인한 후 코드를 변경해주세요.";
+      } else {
+        errEl.textContent = "변경에 실패했습니다. 네트워크 상태를 확인해주세요.";
+      }
     }
   });
 
@@ -920,16 +967,24 @@ try {
     reader.readAsText(file);
   });
 
-  /* ---------------- 초기화 (Firebase 인증 → 관리자 시드 → 실시간 리스너 → 진입) ---------------- */
+  /* ---------------- 초기화 (Firebase 인증 상태가 모든 화면 전환의 유일한 기준) ---------------- */
   let firstUsersSnapshotResolve;
   const firstUsersSnapshotPromise = new Promise((resolve) => { firstUsersSnapshotResolve = resolve; });
+  let listenersAttached = false;
+  let bootedOnce = false;
 
   function attachRealtimeListeners() {
+    if (listenersAttached) return;
+    listenersAttached = true;
     onSnapshot(
       collection(db, "users"),
       (snap) => {
         usersCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         if (firstUsersSnapshotResolve) { firstUsersSnapshotResolve(); firstUsersSnapshotResolve = null; }
+        if (currentAppUser) {
+          const updated = usersCache.find((u) => u.id === currentAppUser.id);
+          if (updated) currentAppUser = updated;
+        }
         refreshCurrentScreen();
       },
       () => { if (firstUsersSnapshotResolve) { firstUsersSnapshotResolve(); firstUsersSnapshotResolve = null; } }
@@ -944,38 +999,60 @@ try {
     });
   }
 
-  async function boot() {
-    bootStatusText.textContent = "서버에 연결하는 중...";
-    try {
-      await signInAnonymously(auth);
-    } catch (err) {
-      showBootError(
-        "인증에 실패했습니다. Firebase 콘솔 → Authentication → Sign-in method에서 '익명' 로그인이 사용 설정되어 있는지 확인해주세요."
-      );
+  // Firebase Authentication의 로그인 상태가 바뀔 때마다(최초 진입, 로그인, 로그아웃, 새로고침
+  // 후 세션 복원 등) 호출됩니다. 로컬에 별도로 저장하는 세션이 없으므로 이 콜백이 유일한 기준입니다.
+  async function handleAuthState(firebaseUser) {
+    if (!firebaseUser) {
+      // 완전히 로그아웃된 상태 → 로그인 화면에서 코드 검증을 하려면 최소한의 Firestore 접근
+      // 권한이 필요하므로 다시 익명으로 연결합니다.
+      currentAppUser = null;
+      try {
+        await signInAnonymously(auth);
+      } catch (err) {
+        showBootError(
+          "인증에 실패했습니다. Firebase 콘솔 → Authentication → Sign-in method에서 '익명' 로그인이 사용 설정되어 있는지 확인해주세요."
+        );
+      }
       return;
     }
 
-    try {
-      await ensureAdminSeed();
-    } catch (err) {
-      showBootError("초기 데이터 설정에 실패했습니다: " + (err && err.message ? err.message : err));
-      return;
-    }
-
-    attachRealtimeListeners();
-    await firstUsersSnapshotPromise;
-
-    hideBootOverlay();
-
-    const session = getSession();
-    if (session) {
-      const user = getCurrentUser();
-      if (user) enterApp();
-      else { clearSession(); showScreen("login"); }
-    } else {
+    if (firebaseUser.isAnonymous) {
+      if (!bootedOnce) {
+        bootedOnce = true;
+        try {
+          await ensureAdminSeed();
+        } catch (err) {
+          showBootError("초기 데이터 설정에 실패했습니다: " + (err && err.message ? err.message : err));
+          return;
+        }
+        attachRealtimeListeners();
+        await firstUsersSnapshotPromise;
+        hideBootOverlay();
+      }
+      currentAppUser = null;
       showScreen("login");
+      return;
+    }
+
+    // 익명이 아닌 실제 로그인 상태 (방금 로그인했거나, 이전 방문의 세션이 복원된 경우)
+    attachRealtimeListeners(); // 안전망
+    if (!bootedOnce) {
+      bootedOnce = true;
+      await firstUsersSnapshotPromise;
+      hideBootOverlay();
+    }
+    const matched = usersCache.find((u) => u.authUid === firebaseUser.uid);
+    if (matched) {
+      enterApp(matched);
+    } else {
+      // 데이터 캐시가 아직 도착하지 않은 극히 드문 경우: 잠시 후 재시도
+      setTimeout(() => handleAuthState(firebaseUser), 200);
     }
   }
 
-  boot();
+  onAuthStateChanged(auth, (firebaseUser) => {
+    handleAuthState(firebaseUser).catch((err) => {
+      showBootError("예상치 못한 오류가 발생했습니다: " + (err && err.message ? err.message : err));
+    });
+  });
 })();
