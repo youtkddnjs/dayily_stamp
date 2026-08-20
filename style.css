@@ -64,33 +64,6 @@ html, body {
 #boot-status-text { color: var(--color-text-muted); font-size: 14px; }
 #boot-error { max-width: 320px; }
 
-/* ---------- 최초 관리자 코드 안내 오버레이 ---------- */
-.admin-seed-overlay { z-index: 600; }
-.admin-seed-card {
-  width: 100%;
-  max-width: 340px;
-  background: var(--color-surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 28px 22px;
-  text-align: center;
-}
-.admin-seed-card h2 { font-size: 17px; margin: 0 0 10px; }
-.admin-seed-card .hint-text { margin: 0 0 16px; text-align: left; }
-.admin-seed-code {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: 10px;
-  background: var(--color-bg);
-  border: 2px dashed var(--color-primary);
-  border-radius: 10px;
-  padding: 14px 8px;
-  margin-bottom: 14px;
-  color: var(--color-primary-dark);
-  font-family: "SFMono-Regular", Consolas, Menlo, monospace;
-}
-.admin-seed-ack-row { text-align: left; margin: 14px 0; }
-
 /* ---------- 앱 셸 (좌측 내비 + 콘텐츠) ---------- */
 #app-shell.app-shell {
   max-width: 560px;

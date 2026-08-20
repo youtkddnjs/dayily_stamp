@@ -16,25 +16,6 @@
     <p id="boot-error" class="error-text hidden"></p>
   </div>
 
-  <!-- ===== 최초 관리자 코드 안내 오버레이 (딱 한 번만 표시됨) ===== -->
-  <div id="admin-seed-overlay" class="boot-overlay admin-seed-overlay hidden">
-    <div class="card admin-seed-card">
-      <div class="login-emoji">🔑</div>
-      <h2>최초 관리자 코드가 생성되었어요</h2>
-      <p class="hint-text">
-        이 코드는 소스 코드가 아니라 Firebase에만 저장되며, 지금 이 화면에서 딱 한 번만 보여드려요.
-        지금 안전한 곳에 기록해두세요. 새로고침하면 다시 볼 수 없어요.
-      </p>
-      <div class="admin-seed-code" id="admin-seed-code">----</div>
-      <button type="button" id="btn-copy-admin-code" class="btn btn-secondary btn-block">코드 복사하기</button>
-      <label class="checkbox-row admin-seed-ack-row">
-        <input type="checkbox" id="admin-seed-ack" />
-        <span>코드를 안전하게 기록했어요</span>
-      </label>
-      <button type="button" id="btn-admin-seed-confirm" class="btn btn-primary btn-block" disabled>확인했습니다 — 로그인 화면으로</button>
-    </div>
-  </div>
-
   <!-- ===== 로그인 화면 ===== -->
   <section id="screen-login" class="screen">
     <div class="card login-card">
@@ -44,7 +25,6 @@
       <input id="login-code" maxlength="4" inputmode="latin" autocomplete="off" placeholder="- - - -" class="code-input" />
       <button id="btn-login" class="btn btn-primary btn-block">접속하기</button>
       <p id="login-error" class="error-text"></p>
-      <p class="hint-text small">관리자 계정이 아직 없다면, 이 사이트에 처음 접속하는 순간 자동으로 만들어지고 코드가 화면에 안내돼요.</p>
     </div>
   </section>
 
