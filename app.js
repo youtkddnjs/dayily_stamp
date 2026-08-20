@@ -13,6 +13,7 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updatePassword,
+  deleteUser,
   signOut,
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
@@ -136,6 +137,46 @@ try {
       authEmail: emailForUserId(id),
     });
     return id;
+  }
+
+  // 관리자 전용: 사용자와 그 사람의 목표·완료기록을 전부 지웁니다.
+  async function deleteUserAndData(targetUser) {
+    // 1) 가능하면 Firebase Authentication 계정도 함께 지웁니다. 클라이언트 SDK는 "지금 로그인한
+    //    사람 스스로"만 자신의 계정을 지울 수 있으므로, 관리자가 이미 알고 있는 이 사용자의 코드로
+    //    보조 앱 인스턴스에 잠깐 로그인한 뒤 그 세션에서 자기 자신을 삭제하는 방식을 씁니다
+    //    (사용자 추가 때 보조 앱으로 계정을 만드는 것과 같은 방식의 역순이며, 관리자 본인의
+    //    로그인 세션은 끊기지 않습니다). 이미 계정이 없거나 실패해도 아래 데이터 삭제는 계속 진행합니다.
+    try {
+      const secondaryApp = initializeApp(firebaseConfig, "secondary-del-" + Date.now() + "-" + (secondaryAppSeq++));
+      const secondaryAuth = getAuth(secondaryApp);
+      try {
+        await signInWithEmailAndPassword(secondaryAuth, targetUser.authEmail, derivePassword(targetUser.code));
+        await deleteUser(secondaryAuth.currentUser);
+      } finally {
+        try { await signOut(secondaryAuth); } catch (e) { /* no-op */ }
+        try { await deleteApp(secondaryApp); } catch (e) { /* no-op */ }
+      }
+    } catch (err) {
+      /* Auth 계정 삭제는 최선을 다해 시도할 뿐, 실패해도 아래 Firestore 데이터 삭제로 이어갑니다. */
+    }
+
+    // 2) Firestore의 사용자 문서 + 그 사람의 목표·완료기록을 모두 지웁니다(500건 단위 분할).
+    const relatedGoals = goalsCache.filter((g) => g.userId === targetUser.id);
+    const relatedCompletions = completionsCache.filter((c) => c.userId === targetUser.id);
+    const ops = [{ ref: doc(db, "users", targetUser.id) }];
+    relatedGoals.forEach((g) => ops.push({ ref: doc(db, "goals", g.id) }));
+    relatedCompletions.forEach((c) => ops.push({ ref: doc(db, "completions", completionDocId(c.userId, c.goalId, c.date)) }));
+
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = writeBatch(db);
+      ops.slice(i, i + 400).forEach((op) => batch.delete(op.ref));
+      await batch.commit();
+    }
+
+    // 리스너가 반영하기 전에 관리자가 곧바로 목록을 다시 볼 수도 있으므로 로컬 캐시도 즉시 갱신합니다.
+    usersCache = usersCache.filter((u) => u.id !== targetUser.id);
+    goalsCache = goalsCache.filter((g) => g.userId !== targetUser.id);
+    completionsCache = completionsCache.filter((c) => c.userId !== targetUser.id);
   }
 
   // 본인 로그인 상태에서만 호출됩니다: Firestore의 code 필드와 Firebase Auth 비밀번호를 함께 갱신합니다.
@@ -627,19 +668,47 @@ try {
 
   function renderUserList() {
     const users = loadUsers();
+    const me = getCurrentUser();
     const list = $("#user-list");
     list.innerHTML = "";
     users.forEach((u) => {
       const li = document.createElement("li");
       li.className = "user-item";
+      const isSelf = me && u.id === me.id;
       li.innerHTML = `
         <div class="user-item-main">
           <span class="user-item-name">${escapeHtml(u.name)}</span>
           <span class="user-item-code">코드: ${escapeHtml(u.code)}</span>
         </div>
-        ${u.isAdmin ? '<span class="user-item-admin-badge">관리자</span>' : ""}
+        <div class="user-item-right">
+          ${u.isAdmin ? '<span class="user-item-admin-badge">관리자</span>' : ""}
+          ${isSelf ? "" : `<button type="button" class="icon-btn btn-delete-user" data-user-id="${u.id}" aria-label="사용자 삭제">삭제</button>`}
+        </div>
       `;
       list.appendChild(li);
+    });
+
+    $$(".btn-delete-user").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const targetId = btn.dataset.userId;
+        const target = users.find((u) => u.id === targetId);
+        if (!target) return;
+        const ok = confirm(
+          `"${target.name}" 사용자를 삭제할까요?\n이 사용자의 목표와 완료 기록이 모두 함께 삭제되며, 되돌릴 수 없습니다.`
+        );
+        if (!ok) return;
+        btn.disabled = true;
+        btn.textContent = "삭제 중...";
+        try {
+          await deleteUserAndData(target);
+          renderSettings();
+        } catch (err) {
+          alert("삭제에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해주세요.");
+          btn.disabled = false;
+          btn.textContent = "삭제";
+        }
+      });
     });
   }
 
@@ -969,7 +1038,13 @@ try {
         if (firstUsersSnapshotResolve) { firstUsersSnapshotResolve(); firstUsersSnapshotResolve = null; }
         if (currentAppUser) {
           const updated = usersCache.find((u) => u.id === currentAppUser.id);
-          if (updated) currentAppUser = updated;
+          if (updated) {
+            currentAppUser = updated;
+          } else {
+            // 다른 기기(관리자)에서 지금 로그인 중인 이 계정을 삭제한 경우: 강제 로그아웃합니다.
+            currentAppUser = null;
+            signOut(auth).catch(() => {});
+          }
         }
         refreshCurrentScreen();
       },
@@ -987,7 +1062,10 @@ try {
 
   // Firebase Authentication의 로그인 상태가 바뀔 때마다(최초 진입, 로그인, 로그아웃, 새로고침
   // 후 세션 복원 등) 호출됩니다. 로컬에 별도로 저장하는 세션이 없으므로 이 콜백이 유일한 기준입니다.
-  async function handleAuthState(firebaseUser) {
+  // retryCount: 로그인된 Auth 계정과 짝을 이루는 Firestore 사용자 문서를 아직 못 찾았을 때
+  // 재시도한 횟수입니다. 데이터 캐시가 늦게 도착하는 극히 드문 경우를 위한 재시도이지만, 관리자가
+  // 이 계정을 삭제해 문서가 영영 없는 경우에는 무한 재시도로 빠지지 않도록 상한을 둡니다.
+  async function handleAuthState(firebaseUser, retryCount = 0) {
     if (!firebaseUser) {
       // 완전히 로그아웃된 상태 → 로그인 화면에서 코드 검증을 하려면 최소한의 Firestore 접근
       // 권한이 필요하므로 다시 익명으로 연결합니다.
@@ -1024,9 +1102,14 @@ try {
     const matched = usersCache.find((u) => u.authUid === firebaseUser.uid);
     if (matched) {
       enterApp(matched);
+    } else if (retryCount < 15) {
+      // 데이터 캐시가 아직 도착하지 않은 극히 드문 경우: 잠시 후 재시도 (최대 약 3초)
+      setTimeout(() => handleAuthState(firebaseUser, retryCount + 1), 200);
     } else {
-      // 데이터 캐시가 아직 도착하지 않은 극히 드문 경우: 잠시 후 재시도
-      setTimeout(() => handleAuthState(firebaseUser), 200);
+      // 그래도 못 찾으면 관리자가 이 계정을 삭제한 것으로 보고 로그아웃 처리합니다.
+      currentAppUser = null;
+      try { await signOut(auth); } catch (e) { /* no-op */ }
+      loginError.textContent = "계정을 찾을 수 없습니다. 관리자에게 문의해주세요.";
     }
   }
 

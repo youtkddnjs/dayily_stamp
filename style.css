@@ -366,6 +366,17 @@ html, body {
 .user-item-name { font-weight: 600; font-size: 14px; }
 .user-item-code { font-size: 12px; color: var(--color-text-muted); }
 .user-item-admin-badge { font-size: 11px; color: #a8720b; background:#fff3d6; padding:2px 8px; border-radius:20px; }
+.user-item-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.btn-delete-user {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
+  background: #fdecec;
+  border-radius: 20px;
+  padding: 5px 12px;
+}
+.btn-delete-user:hover { background: #fbdada; }
+.btn-delete-user:disabled { opacity: 0.6; cursor: default; }
 
 /* ---------- 모달 ---------- */
 .modal-overlay {
@@ -526,29 +537,45 @@ html, body {
   #app-shell.app-shell { max-width: 760px; margin: 0 auto; }
   .modal-overlay { align-items: center; padding: 24px; }
   .modal { border-radius: 18px; max-height: 80vh; }
+
+  /* 메뉴(좌측 내비): 아이콘/글자를 한 단계 키워서 넓은 화면에서도 또렷하게 */
+  .side-nav { width: 84px; }
+  .side-nav-btn { width: 68px; padding: 10px 4px; }
+  .side-nav-icon { font-size: 21px; }
+  .side-nav-label { font-size: 11.5px; }
+
+  /* 달력: 칸 간격/숫자/점을 한 단계 키움 */
+  .calendar-nav h2 { font-size: 19px; }
+  .calendar-grid { gap: 7px; }
+  .day-cell { font-size: 15px; border-radius: 12px; }
+  .day-cell .status-dot { width: 9px; height: 9px; }
+  .dow-header { font-size: 13px; padding: 10px 0; }
+  .nav-btn { width: 36px; height: 36px; font-size: 19px; }
+  .my-stat-value { font-size: 22px; }
 }
 
 /* ---------- 데스크톱 ---------- */
 @media (min-width: 1024px) {
   #app-shell.app-shell { max-width: 1080px; }
   .side-nav {
-    width: 208px;
+    width: 220px;
     padding: 20px 12px;
     align-items: stretch;
   }
   .side-nav-top { align-items: stretch; gap: 4px; }
-  .side-nav-brand { text-align: left; padding-left: 10px; margin-bottom: 18px; }
+  .side-nav-brand { text-align: left; padding-left: 10px; margin-bottom: 18px; font-size: 26px; }
   .side-nav-btn {
     width: 100%;
     flex-direction: row;
     justify-content: flex-start;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 12px;
+    padding: 11px 14px;
   }
-  .side-nav-icon { font-size: 18px; }
-  .side-nav-label { font-size: 13.5px; }
+  .side-nav-icon { font-size: 21px; }
+  .side-nav-label { font-size: 14.5px; }
   .side-nav-bottom { align-items: stretch; }
   .main-topbar { padding: 20px 32px 8px; }
+  .main-topbar h2 { font-size: 21px; }
   .main-area .screen {
     max-width: 880px;
     margin: 0 auto;
@@ -560,6 +587,17 @@ html, body {
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 12px;
   }
+
+  /* 달력: 태블릿보다 한 단계 더 크게 — 넓은 화면일수록 한눈에 잘 들어오도록 */
+  .calendar-nav h2 { font-size: 22px; }
+  .calendar-grid { gap: 10px; }
+  .day-cell { font-size: 17px; border-radius: 14px; gap: 4px; }
+  .day-cell .status-dot { width: 10px; height: 10px; }
+  .dow-header { font-size: 14px; padding: 12px 0; }
+  .nav-btn { width: 40px; height: 40px; font-size: 21px; }
+  .my-stat-card { padding: 20px 24px; }
+  .my-stat-value { font-size: 26px; }
+  .my-stat-label { font-size: 14px; }
 }
 
 /* ---------- 휴대폰: 좌측 내비 → 하단 탭 바 ---------- */
