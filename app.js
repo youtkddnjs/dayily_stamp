@@ -242,14 +242,22 @@ try {
     if (cached) cached.code = newCode;
   }
 
+  // 목표를 추가하고 나서 곧바로 캘린더를 다시 그리는데, 이때 Firestore 실시간 리스너가
+  // 아직 반영되기 전이면(비동기라 타이밍이 보장되지 않음) 방금 추가한 목표가 캘린더에
+  // 바로 보이지 않을 수 있습니다. 리스너를 기다리지 않고 로컬 캐시도 즉시 갱신해
+  // 이 경쟁 상태를 없앱니다(코드 변경 때와 같은 이유 — 나중에 리스너가 같은 값을 다시
+  // 전달해도 동일한 값이라 문제 없습니다).
   async function createGoal(goalData) {
     const id = genId("g");
     await setDoc(doc(db, "goals", id), goalData);
+    goalsCache.push({ id, ...goalData });
     return id;
   }
 
   async function updateGoal(goalId, patch) {
     await updateDoc(doc(db, "goals", goalId), patch);
+    const cached = goalsCache.find((g) => g.id === goalId);
+    if (cached) Object.assign(cached, patch);
   }
 
   async function deleteGoalAndCompletions(goalId) {
@@ -260,14 +268,25 @@ try {
       batch.delete(doc(db, "completions", completionDocId(c.userId, c.goalId, c.date)));
     });
     await batch.commit();
+    goalsCache = goalsCache.filter((g) => g.id !== goalId);
+    completionsCache = completionsCache.filter((c) => c.goalId !== goalId);
   }
 
   async function setDone(userId, goalId, dateStr, done) {
     const ref = doc(db, "completions", completionDocId(userId, goalId, dateStr));
     if (done) {
-      await setDoc(ref, { userId, goalId, date: dateStr, done: true });
+      const data = { userId, goalId, date: dateStr, done: true };
+      await setDoc(ref, data);
+      const existing = completionsCache.find(
+        (c) => c.userId === userId && c.goalId === goalId && c.date === dateStr
+      );
+      if (existing) Object.assign(existing, data);
+      else completionsCache.push({ id: completionDocId(userId, goalId, dateStr), ...data });
     } else {
       await deleteDoc(ref);
+      completionsCache = completionsCache.filter(
+        (c) => !(c.userId === userId && c.goalId === goalId && c.date === dateStr)
+      );
     }
   }
 
@@ -281,14 +300,20 @@ try {
     existingCompletions.forEach((c) =>
       ops.push({ type: "delete", ref: doc(db, "completions", completionDocId(c.userId, c.goalId, c.date)) })
     );
+    const newGoals = [];
     backupGoals.forEach((g) => {
       const { id, ...rest } = g;
       const goalId = id || genId("g");
-      ops.push({ type: "set", ref: doc(db, "goals", goalId), data: { ...rest, userId } });
+      const goalData = { ...rest, userId };
+      ops.push({ type: "set", ref: doc(db, "goals", goalId), data: goalData });
+      newGoals.push({ id: goalId, ...goalData });
     });
+    const newCompletions = [];
     backupCompletions.forEach((c) => {
       const newC = { userId, goalId: c.goalId, date: c.date, done: true };
-      ops.push({ type: "set", ref: doc(db, "completions", completionDocId(userId, newC.goalId, newC.date)), data: newC });
+      const completionId = completionDocId(userId, newC.goalId, newC.date);
+      ops.push({ type: "set", ref: doc(db, "completions", completionId), data: newC });
+      newCompletions.push({ id: completionId, ...newC });
     });
 
     for (let i = 0; i < ops.length; i += 400) {
@@ -299,6 +324,10 @@ try {
       });
       await batch.commit();
     }
+
+    // 리스너를 기다리지 않고 로컬 캐시도 즉시 갱신합니다(다른 쓰기 함수들과 같은 이유).
+    goalsCache = goalsCache.filter((g) => g.userId !== userId).concat(newGoals);
+    completionsCache = completionsCache.filter((c) => c.userId !== userId).concat(newCompletions);
   }
 
   /* ---------------- Domain Logic ---------------- */
