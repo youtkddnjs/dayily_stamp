@@ -367,31 +367,37 @@ try {
     return "partial";
   }
 
-  // 특정 연/월의 달성률 통계. 목표 생성일이 해당 월 중간이면 goalAppliesOnDate가
-  // startDate 이전 날짜를 자연스럽게 제외하므로 별도 보정 없이 생성일 기준으로 계산됩니다.
-  // 아직 오지 않은 미래 날짜는 집계에서 제외합니다.
-  function monthStats(userId, year, month) {
+  // 오늘 목표 달성률(캘린더 화면 전용): 오늘 적용되는 "필수" 목표 중 몇 개를 완료했는지의
+  // 비율입니다. 선택 목표는 분모/분자 어디에도 들어가지 않습니다.
+  function todayRequiredStats(userId) {
+    const dateStr = todayStr();
+    const requiredGoals = goalsForUserOnDate(userId, dateStr).filter((g) => g.required !== false);
+    const doneCount = requiredGoals.filter((g) => isDone(userId, g.id, dateStr)).length;
+    const rate = requiredGoals.length > 0 ? Math.round((doneCount / requiredGoals.length) * 100) : null;
+    return { total: requiredGoals.length, done: doneCount, rate };
+  }
+
+  // 이번 달 달성률(현황판 화면 전용): 그 달 1일부터 말일까지(아직 오지 않은 날짜도 포함)를
+  // 분모로 삼아, "그날 적용되는 필수 목표를 모두 완료했는지"로 하루하루를 판정합니다.
+  // 그날 적용되는 필수 목표가 하나도 없는 날(예: 주 3회만 필수인 목표라 오늘은 해당 없음)은
+  // 분모·분자 모두에서 제외합니다. 아직 오지 않은 날짜도 분모에 포함되므로, 월초에는
+  // 낮게 보이다가 각 날짜에 실제로 도달해 완료할 때마다 점점 오릅니다.
+  function monthRequiredDayStats(userId, year, month) {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const todayS = todayStr();
     let applicableDays = 0;
     let fullyDoneDays = 0;
-    let slotsTotal = 0;
-    let slotsDone = 0;
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${pad2(month + 1)}-${pad2(day)}`;
-      if (dateStr > todayS) break; // 미래 날짜는 집계하지 않음
-      const goals = goalsForUserOnDate(userId, dateStr);
-      if (goals.length === 0) continue; // 목표가 없던 날(계정/목표 생성 이전 포함)은 분모에서 제외
+      const requiredGoals = goalsForUserOnDate(userId, dateStr).filter((g) => g.required !== false);
+      if (requiredGoals.length === 0) continue;
       applicableDays++;
-      const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
-      slotsTotal += goals.length;
-      slotsDone += doneCount;
-      if (doneCount === goals.length) fullyDoneDays++;
+      const allDone = requiredGoals.every((g) => isDone(userId, g.id, dateStr));
+      if (allDone) fullyDoneDays++;
     }
 
-    const rate = slotsTotal > 0 ? Math.round((slotsDone / slotsTotal) * 100) : null;
-    return { applicableDays, fullyDoneDays, slotsTotal, slotsDone, rate };
+    const rate = applicableDays > 0 ? Math.round((fullyDoneDays / applicableDays) * 100) : null;
+    return { daysInMonth, applicableDays, fullyDoneDays, rate };
   }
 
   // 오늘(또는 목표가 있던 가장 최근 날짜)부터 거슬러 올라가며 모든 목표를 완료한 날의 연속 일수.
@@ -633,18 +639,17 @@ try {
   function renderMyStat() {
     const user = getCurrentUser();
     if (!user) return;
-    const now = new Date();
-    const stats = monthStats(user.id, now.getFullYear(), now.getMonth());
+    const stats = todayRequiredStats(user.id);
     const streak = currentStreak(user.id);
 
     if (stats.rate == null) {
       $("#my-stat-value").textContent = "—";
       $("#my-stat-bar").style.width = "0%";
-      $("#my-stat-sub").textContent = "이번 달 아직 진행할 목표가 없어요.";
+      $("#my-stat-sub").textContent = "오늘 해야 할 필수 목표가 없어요.";
     } else {
       $("#my-stat-value").textContent = stats.rate + "%";
       $("#my-stat-bar").style.width = stats.rate + "%";
-      $("#my-stat-sub").textContent = `${stats.slotsDone}/${stats.slotsTotal} 목표 완료 · 완전 달성 ${stats.fullyDoneDays}/${stats.applicableDays}일`;
+      $("#my-stat-sub").textContent = `필수 목표 ${stats.done}/${stats.total}개 완료`;
     }
     $("#my-stat-streak").textContent = `🔥 연속 ${streak}일`;
   }
@@ -871,7 +876,7 @@ try {
     $("#dashboard-user-list-empty").classList.toggle("hidden", users.length > 0);
 
     users.forEach((u) => {
-      const stats = monthStats(u.id, dashState.year, dashState.month);
+      const stats = monthRequiredDayStats(u.id, dashState.year, dashState.month);
       const streak = currentStreak(u.id);
       const rateText = stats.rate == null ? "—" : stats.rate + "%";
       const barWidth = stats.rate == null ? 0 : stats.rate;
@@ -885,7 +890,7 @@ try {
         </div>
         <div class="dashboard-bar-wrap"><div class="dashboard-bar" style="width:${barWidth}%"></div></div>
         <div class="dashboard-item-sub">
-          <span>${stats.slotsTotal ? `${stats.slotsDone}/${stats.slotsTotal} 목표 완료` : "이 달에 진행할 목표 없음"}</span>
+          <span>${stats.applicableDays ? `필수 목표 완전 달성 ${stats.fullyDoneDays}/${stats.applicableDays}일` : "이 달에 필수 목표 없음"}</span>
           <span class="streak-badge">🔥 연속 ${streak}일</span>
         </div>
       `;
