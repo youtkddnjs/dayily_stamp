@@ -367,18 +367,39 @@ html, body {
 .user-item-code { font-size: 12px; color: var(--color-text-muted); }
 .user-item-admin-badge { font-size: 11px; color: #a8720b; background:#fff3d6; padding:2px 8px; border-radius:20px; white-space: nowrap; }
 .user-item-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex-shrink: 0; }
-.btn-delete-user, .btn-toggle-admin {
+.btn-delete-user {
   font-size: 12px;
   font-weight: 600;
   border-radius: 20px;
   padding: 5px 12px;
   white-space: nowrap;
+  color: var(--color-danger);
+  background: #fdecec;
 }
-.btn-delete-user { color: var(--color-danger); background: #fdecec; }
 .btn-delete-user:hover { background: #fbdada; }
-.btn-toggle-admin { color: var(--color-primary-dark); background: #eef0fa; }
-.btn-toggle-admin:hover { background: #e2e5f9; }
-.btn-delete-user:disabled, .btn-toggle-admin:disabled { opacity: 0.6; cursor: default; }
+.btn-delete-user:disabled { opacity: 0.6; cursor: default; }
+.admin-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  background: #eef0fa;
+  border-radius: 20px;
+  padding: 5px 10px 5px 8px;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+.admin-check-label:hover { background: #e2e5f9; }
+.admin-check-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--color-primary-dark);
+}
+.admin-check-label input[type="checkbox"]:disabled { cursor: default; }
 
 /* ---------- 모달 ---------- */
 .modal-overlay {

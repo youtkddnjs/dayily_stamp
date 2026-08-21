@@ -179,9 +179,15 @@ try {
     completionsCache = completionsCache.filter((c) => c.userId !== targetUser.id);
   }
 
-  // 관리자 전용: 다른 사용자에게 관리자 권한을 주거나 뺏습니다. 본인 계정은 UI에서부터 막아
-  // 대상에서 제외합니다(마지막 남은 관리자가 스스로를 해제해 관리자가 0명이 되는 상황 방지).
+  // 최초 관리자(Firebase 콘솔에서 만든 문서 ID "admin") 전용: 다른 사용자에게 관리자 권한을
+  // 주거나 뺏습니다. 본인 계정은 UI에서부터 막아 대상에서 제외합니다(마지막 남은 관리자가
+  // 스스로를 해제해 관리자가 0명이 되는 상황 방지). 나중에 관리자로 지정된 사람은 이 권한
+  // 자체가 없고(사용자 추가/삭제만 가능) UI에도 체크박스가 뜨지 않는데, 그래도 만에 하나를
+  // 대비해 함수 자체에서도 한 번 더 막습니다.
   async function setUserAdminStatus(userId, isAdmin) {
+    if (!currentAppUser || currentAppUser.id !== "admin") {
+      throw new Error("관리자 권한 지정은 최초 관리자만 할 수 있습니다.");
+    }
     await updateDoc(doc(db, "users", userId), { isAdmin });
     // 리스너를 기다리지 않고 로컬 캐시도 즉시 갱신합니다(코드 변경 때와 같은 이유).
     const cached = usersCache.find((u) => u.id === userId);
@@ -678,17 +684,23 @@ try {
   function renderUserList() {
     const users = loadUsers();
     const me = getCurrentUser();
+    // 최초 관리자(Firebase 콘솔에서 만든 문서 ID "admin")만 다른 사람의 관리자 권한을
+    // 지정/해제할 수 있습니다. 그 최초 관리자가 나중에 "관리자로 지정"한 사람은 사용자
+    // 추가/삭제만 할 수 있고, 다른 사람에게 관리자 권한을 주는 것은 할 수 없습니다.
+    const isBootstrapAdmin = !!(me && me.id === "admin");
     const list = $("#user-list");
     list.innerHTML = "";
     users.forEach((u) => {
       const li = document.createElement("li");
       li.className = "user-item";
       const isSelf = me && u.id === me.id;
-      const toggleAdminBtn = isSelf
-        ? ""
-        : u.isAdmin
-        ? `<button type="button" class="icon-btn btn-toggle-admin" data-user-id="${u.id}" data-next-admin="false" aria-label="관리자 권한 해제">관리자 해제</button>`
-        : `<button type="button" class="icon-btn btn-toggle-admin" data-user-id="${u.id}" data-next-admin="true" aria-label="관리자로 지정">관리자로 지정</button>`;
+      const adminCheckbox =
+        isBootstrapAdmin && !isSelf
+          ? `<label class="admin-check-label">
+              <input type="checkbox" class="admin-toggle-checkbox" data-user-id="${u.id}" ${u.isAdmin ? "checked" : ""} aria-label="${escapeHtml(u.name)} 관리자 권한" />
+              <span>관리자</span>
+            </label>`
+          : "";
       li.innerHTML = `
         <div class="user-item-main">
           <span class="user-item-name">${escapeHtml(u.name)}</span>
@@ -696,35 +708,36 @@ try {
         </div>
         <div class="user-item-right">
           ${u.isAdmin ? '<span class="user-item-admin-badge">관리자</span>' : ""}
-          ${toggleAdminBtn}
+          ${adminCheckbox}
           ${isSelf ? "" : `<button type="button" class="icon-btn btn-delete-user" data-user-id="${u.id}" aria-label="사용자 삭제">삭제</button>`}
         </div>
       `;
       list.appendChild(li);
     });
 
-    $$(".btn-toggle-admin").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const targetId = btn.dataset.userId;
-        const nextAdmin = btn.dataset.nextAdmin === "true";
+    $$(".admin-toggle-checkbox").forEach((cb) => {
+      cb.addEventListener("change", async () => {
+        const targetId = cb.dataset.userId;
+        const nextAdmin = cb.checked;
         const target = users.find((u) => u.id === targetId);
         if (!target) return;
         const ok = confirm(
           nextAdmin
-            ? `"${target.name}" 사용자에게 관리자 권한을 부여할까요?\n관리자는 사용자 추가/삭제, 관리자 권한 지정 등을 할 수 있게 됩니다.`
+            ? `"${target.name}" 사용자에게 관리자 권한을 부여할까요?\n관리자는 사용자 추가/삭제를 할 수 있게 됩니다.`
             : `"${target.name}" 사용자의 관리자 권한을 해제할까요?`
         );
-        if (!ok) return;
-        btn.disabled = true;
-        btn.textContent = "처리 중...";
+        if (!ok) {
+          cb.checked = !nextAdmin;
+          return;
+        }
+        cb.disabled = true;
         try {
           await setUserAdminStatus(targetId, nextAdmin);
           renderSettings();
         } catch (err) {
           alert("변경에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해주세요.");
-          btn.disabled = false;
-          btn.textContent = nextAdmin ? "관리자로 지정" : "관리자 해제";
+          cb.checked = !nextAdmin;
+          cb.disabled = false;
         }
       });
     });
