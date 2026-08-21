@@ -769,7 +769,10 @@ try {
     $("#dashboard-month-title").textContent = `${dashState.year}년 ${dashState.month + 1}월`;
 
     // 관리자는 실제 참여자가 아니라 운영 계정이므로 현황판에서는 제외합니다.
-    const users = loadUsers().filter((u) => !u.isAdmin);
+    // 문서 ID가 "admin"인 계정은 Firebase 콘솔에서 손으로 만든 최초 관리자입니다(README 참고).
+    // isAdmin 필드가 실수로 잘못 입력됐더라도(타입 오류, 누락 등) 이 계정만큼은 항상 제외되도록
+    // 이중으로 확인합니다.
+    const users = loadUsers().filter((u) => !u.isAdmin && u.id !== "admin");
     const list = $("#dashboard-user-list");
     list.innerHTML = "";
     $("#dashboard-user-list-empty").classList.toggle("hidden", users.length > 0);
