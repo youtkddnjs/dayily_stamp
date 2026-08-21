@@ -179,6 +179,15 @@ try {
     completionsCache = completionsCache.filter((c) => c.userId !== targetUser.id);
   }
 
+  // 관리자 전용: 다른 사용자에게 관리자 권한을 주거나 뺏습니다. 본인 계정은 UI에서부터 막아
+  // 대상에서 제외합니다(마지막 남은 관리자가 스스로를 해제해 관리자가 0명이 되는 상황 방지).
+  async function setUserAdminStatus(userId, isAdmin) {
+    await updateDoc(doc(db, "users", userId), { isAdmin });
+    // 리스너를 기다리지 않고 로컬 캐시도 즉시 갱신합니다(코드 변경 때와 같은 이유).
+    const cached = usersCache.find((u) => u.id === userId);
+    if (cached) cached.isAdmin = isAdmin;
+  }
+
   // 본인 로그인 상태에서만 호출됩니다: Firestore의 code 필드와 Firebase Auth 비밀번호를 함께 갱신합니다.
   async function updateUserCode(userId, newCode) {
     await updatePassword(auth.currentUser, derivePassword(newCode));
@@ -675,6 +684,11 @@ try {
       const li = document.createElement("li");
       li.className = "user-item";
       const isSelf = me && u.id === me.id;
+      const toggleAdminBtn = isSelf
+        ? ""
+        : u.isAdmin
+        ? `<button type="button" class="icon-btn btn-toggle-admin" data-user-id="${u.id}" data-next-admin="false" aria-label="관리자 권한 해제">관리자 해제</button>`
+        : `<button type="button" class="icon-btn btn-toggle-admin" data-user-id="${u.id}" data-next-admin="true" aria-label="관리자로 지정">관리자로 지정</button>`;
       li.innerHTML = `
         <div class="user-item-main">
           <span class="user-item-name">${escapeHtml(u.name)}</span>
@@ -682,10 +696,37 @@ try {
         </div>
         <div class="user-item-right">
           ${u.isAdmin ? '<span class="user-item-admin-badge">관리자</span>' : ""}
+          ${toggleAdminBtn}
           ${isSelf ? "" : `<button type="button" class="icon-btn btn-delete-user" data-user-id="${u.id}" aria-label="사용자 삭제">삭제</button>`}
         </div>
       `;
       list.appendChild(li);
+    });
+
+    $$(".btn-toggle-admin").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const targetId = btn.dataset.userId;
+        const nextAdmin = btn.dataset.nextAdmin === "true";
+        const target = users.find((u) => u.id === targetId);
+        if (!target) return;
+        const ok = confirm(
+          nextAdmin
+            ? `"${target.name}" 사용자에게 관리자 권한을 부여할까요?\n관리자는 사용자 추가/삭제, 관리자 권한 지정 등을 할 수 있게 됩니다.`
+            : `"${target.name}" 사용자의 관리자 권한을 해제할까요?`
+        );
+        if (!ok) return;
+        btn.disabled = true;
+        btn.textContent = "처리 중...";
+        try {
+          await setUserAdminStatus(targetId, nextAdmin);
+          renderSettings();
+        } catch (err) {
+          alert("변경에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해주세요.");
+          btn.disabled = false;
+          btn.textContent = nextAdmin ? "관리자로 지정" : "관리자 해제";
+        }
+      });
     });
 
     $$(".btn-delete-user").forEach((btn) => {
