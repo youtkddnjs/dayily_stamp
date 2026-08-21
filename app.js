@@ -79,6 +79,20 @@ try {
     return s;
   }
 
+  // 이미 사용 중인 코드와 겹치지 않는 임의 코드를 생성합니다("자동생성" 버튼용).
+  // 코드 4자리(대소문자 무시, 혼동 글자 제외 33종)의 조합 수가 넉넉히 많아 실제로는
+  // 거의 항상 1번 만에 성공하지만, 혹시 몰라 여러 번 재시도하고 그래도 안 되면
+  // (사용자가 극단적으로 많은 경우) 마지막으로 만든 값을 그대로 반환합니다 — 이 경우에도
+  // 실제 저장 시점에는 아래 중복 검사에서 다시 한번 걸러집니다.
+  function randomUnusedCode() {
+    const used = new Set(loadUsers().map((u) => u.code.toLowerCase()));
+    let code = randomCode();
+    for (let i = 0; i < 20 && used.has(code.toLowerCase()); i++) {
+      code = randomCode();
+    }
+    return code;
+  }
+
   function isValidCode(code) {
     return /^[a-z0-9]{4}$/i.test(code);
   }
@@ -937,6 +951,19 @@ try {
     openModal("changeCode");
   });
 
+  // 입력하는 동안에도 곧바로 중복 여부를 알려줍니다(제출을 눌러보기 전에 미리 확인 가능).
+  $("#new-code-input").addEventListener("input", () => {
+    const user = getCurrentUser();
+    const newCode = $("#new-code-input").value.trim();
+    const errEl = $("#change-code-error");
+    if (!newCode || !isValidCode(newCode)) {
+      errEl.textContent = "";
+      return;
+    }
+    const dup = user && loadUsers().find((u) => u.id !== user.id && u.code.toLowerCase() === newCode.toLowerCase());
+    errEl.textContent = dup ? "이미 사용 중인 코드입니다. 다른 코드를 입력해주세요." : "";
+  });
+
   $("#btn-confirm-change-code").addEventListener("click", async () => {
     const user = getCurrentUser();
     const newCode = $("#new-code-input").value.trim();
@@ -968,13 +995,26 @@ try {
   /* ---------------- 관리자: 사용자 추가 ---------------- */
   $("#btn-add-user").addEventListener("click", () => {
     $("#new-user-name").value = "";
-    $("#new-user-code").value = randomCode();
+    $("#new-user-code").value = randomUnusedCode();
     $("#add-user-error").textContent = "";
     openModal("addUser");
   });
 
   $("#btn-gen-code").addEventListener("click", () => {
-    $("#new-user-code").value = randomCode();
+    $("#new-user-code").value = randomUnusedCode();
+    $("#add-user-error").textContent = "";
+  });
+
+  // 입력하는 동안에도 곧바로 중복 여부를 알려줍니다(제출을 눌러보기 전에 미리 확인 가능).
+  $("#new-user-code").addEventListener("input", () => {
+    const code = $("#new-user-code").value.trim();
+    const errEl = $("#add-user-error");
+    if (!code || !isValidCode(code)) {
+      errEl.textContent = "";
+      return;
+    }
+    const dup = loadUsers().find((u) => u.code.toLowerCase() === code.toLowerCase());
+    errEl.textContent = dup ? "이미 사용 중인 코드입니다." : "";
   });
 
   $("#btn-confirm-add-user").addEventListener("click", async () => {
