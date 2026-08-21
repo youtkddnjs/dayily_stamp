@@ -727,9 +727,11 @@ try {
   function renderDashboard() {
     $("#dashboard-month-title").textContent = `${dashState.year}년 ${dashState.month + 1}월`;
 
-    const users = loadUsers();
+    // 관리자는 실제 참여자가 아니라 운영 계정이므로 현황판에서는 제외합니다.
+    const users = loadUsers().filter((u) => !u.isAdmin);
     const list = $("#dashboard-user-list");
     list.innerHTML = "";
+    $("#dashboard-user-list-empty").classList.toggle("hidden", users.length > 0);
 
     users.forEach((u) => {
       const stats = monthStats(u.id, dashState.year, dashState.month);
@@ -741,7 +743,7 @@ try {
       li.className = "dashboard-item";
       li.innerHTML = `
         <div class="dashboard-item-top">
-          <span class="dashboard-item-name">${escapeHtml(u.name)}${u.isAdmin ? '<span class="admin-tag">관리자</span>' : ""}</span>
+          <span class="dashboard-item-name">${escapeHtml(u.name)}</span>
           <span class="dashboard-item-rate">${rateText}</span>
         </div>
         <div class="dashboard-bar-wrap"><div class="dashboard-bar" style="width:${barWidth}%"></div></div>
