@@ -119,7 +119,8 @@
           <div class="settings-block">
             <h3>계정</h3>
             <p class="hint-text">현재 접속 코드로 로그인 중입니다.</p>
-            <button id="btn-change-code" class="btn btn-secondary">접속 코드 변경</button>
+            <button id="btn-change-code" class="btn btn-secondary hidden">접속 코드 변경</button>
+            <p id="account-code-admin-only-note" class="hint-text small hidden">접속 코드 변경은 관리자만 할 수 있습니다. 코드를 바꾸고 싶다면 관리자에게 요청해주세요.</p>
           </div>
 
           <div class="settings-block">
@@ -219,11 +220,11 @@
     <!-- 접속 코드 변경 모달 -->
     <div id="modal-change-code" class="modal hidden">
       <div class="modal-header">
-        <h3>접속 코드 변경</h3>
+        <h3 id="change-code-title">접속 코드 변경</h3>
         <button class="modal-close" data-close>✕</button>
       </div>
       <div class="modal-body">
-        <p class="hint-text">새 4자리 코드를 입력하세요 (영문/숫자 조합 가능).<br>변경 후 자동으로 로그아웃되며, 새 코드로 다시 접속해야 합니다.</p>
+        <p class="hint-text" id="change-code-hint">새 4자리 코드를 입력하세요 (영문/숫자 조합 가능).<br>변경 후 자동으로 로그아웃되며, 새 코드로 다시 접속해야 합니다.</p>
         <input id="new-code-input" maxlength="4" class="code-input" placeholder="- - - -" />
         <p id="change-code-error" class="error-text"></p>
       </div>

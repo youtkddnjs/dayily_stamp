@@ -221,6 +221,27 @@ try {
     if (cached) cached.code = newCode;
   }
 
+  // 관리자 전용: 다른 사용자의 접속 코드를 대신 바꿔줍니다. 이제 개인은 스스로 접속 코드를
+  // 바꿀 수 없고 관리자만 바꿀 수 있는데, Firebase 클라이언트 SDK는 "지금 로그인한 사람
+  // 스스로"만 자기 비밀번호를 바꿀 수 있으므로, 관리자가 이미 알고 있는 그 사용자의 현재
+  // 코드로 보조 앱 인스턴스에 잠깐 로그인해 그 세션에서 비밀번호를 바꾸는 방식을 씁니다
+  // (사용자 삭제 때 보조 앱으로 계정을 지우는 것과 같은 방식이며, 관리자 본인의 로그인
+  // 세션은 끊기지 않습니다).
+  async function adminChangeUserCode(targetUser, newCode) {
+    const secondaryApp = initializeApp(firebaseConfig, "secondary-code-" + Date.now() + "-" + (secondaryAppSeq++));
+    const secondaryAuth = getAuth(secondaryApp);
+    try {
+      await signInWithEmailAndPassword(secondaryAuth, targetUser.authEmail, derivePassword(targetUser.code));
+      await updatePassword(secondaryAuth.currentUser, derivePassword(newCode));
+    } finally {
+      try { await signOut(secondaryAuth); } catch (e) { /* no-op */ }
+      try { await deleteApp(secondaryApp); } catch (e) { /* no-op */ }
+    }
+    await updateDoc(doc(db, "users", targetUser.id), { code: newCode });
+    const cached = usersCache.find((u) => u.id === targetUser.id);
+    if (cached) cached.code = newCode;
+  }
+
   async function createGoal(goalData) {
     const id = genId("g");
     await setDoc(doc(db, "goals", id), goalData);
@@ -691,6 +712,11 @@ try {
       list.appendChild(li);
     });
 
+    // 개인은 더 이상 스스로 접속 코드를 바꿀 수 없고, 관리자만 바꿀 수 있습니다
+    // (본인 것은 이 "계정" 섹션에서, 다른 사람 것은 아래 "사용자 관리" 목록에서).
+    $("#btn-change-code").classList.toggle("hidden", !user.isAdmin);
+    $("#account-code-admin-only-note").classList.toggle("hidden", !!user.isAdmin);
+
     $("#admin-block").classList.toggle("hidden", !user.isAdmin);
     if (user.isAdmin) renderUserList();
   }
@@ -723,10 +749,21 @@ try {
         <div class="user-item-right">
           ${u.isAdmin ? '<span class="user-item-admin-badge">관리자</span>' : ""}
           ${adminCheckbox}
+          ${isSelf ? "" : `<button type="button" class="icon-btn btn-change-user-code" data-user-id="${u.id}" aria-label="${escapeHtml(u.name)} 접속 코드 변경">코드 변경</button>`}
           ${isSelf ? "" : `<button type="button" class="icon-btn btn-delete-user" data-user-id="${u.id}" aria-label="사용자 삭제">삭제</button>`}
         </div>
       `;
       list.appendChild(li);
+    });
+
+    $$(".btn-change-user-code").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const targetId = btn.dataset.userId;
+        const target = users.find((u) => u.id === targetId);
+        if (!target) return;
+        openChangeCodeModal(target);
+      });
     });
 
     $$(".admin-toggle-checkbox").forEach((cb) => {
@@ -945,27 +982,47 @@ try {
   });
 
   /* ---------------- 접속 코드 변경 ---------------- */
-  $("#btn-change-code").addEventListener("click", () => {
+  // 개인은 더 이상 스스로 접속 코드를 바꿀 수 없고, 관리자만 바꿀 수 있습니다. 이 모달은
+  // 두 가지 경우에 함께 쓰입니다: (1) 관리자 본인이 "계정" 섹션에서 자기 코드를 바꿀 때
+  // (changeCodeTarget = null), (2) 관리자가 "사용자 관리" 목록에서 다른 사용자의 코드를
+  // 대신 바꿀 때(changeCodeTarget = 그 사용자). 후자는 본인 세션을 로그아웃시키지 않습니다.
+  let changeCodeTarget = null;
+
+  function openChangeCodeModal(targetUser) {
+    changeCodeTarget = targetUser || null;
     $("#new-code-input").value = "";
     $("#change-code-error").textContent = "";
+    $("#change-code-title").textContent = changeCodeTarget ? `"${changeCodeTarget.name}"님의 접속 코드 변경` : "접속 코드 변경";
+    $("#change-code-hint").innerHTML = changeCodeTarget
+      ? "새 4자리 코드를 입력하세요 (영문/숫자 조합 가능).<br>이 사용자가 다른 기기에 로그인되어 있었다면, 다음 로그인부터 새 코드를 사용해야 합니다."
+      : "새 4자리 코드를 입력하세요 (영문/숫자 조합 가능).<br>변경 후 자동으로 로그아웃되며, 새 코드로 다시 접속해야 합니다.";
     openModal("changeCode");
+  }
+
+  $("#btn-change-code").addEventListener("click", () => {
+    const user = getCurrentUser();
+    if (!user || !user.isAdmin) return; // 관리자만 자기 코드를 바꿀 수 있습니다(버튼도 숨겨져 있지만 만약을 대비한 안전장치).
+    openChangeCodeModal(null);
   });
 
   // 입력하는 동안에도 곧바로 중복 여부를 알려줍니다(제출을 눌러보기 전에 미리 확인 가능).
   $("#new-code-input").addEventListener("input", () => {
     const user = getCurrentUser();
+    const target = changeCodeTarget || user;
     const newCode = $("#new-code-input").value.trim();
     const errEl = $("#change-code-error");
     if (!newCode || !isValidCode(newCode)) {
       errEl.textContent = "";
       return;
     }
-    const dup = user && loadUsers().find((u) => u.id !== user.id && u.code.toLowerCase() === newCode.toLowerCase());
+    const dup = target && loadUsers().find((u) => u.id !== target.id && u.code.toLowerCase() === newCode.toLowerCase());
     errEl.textContent = dup ? "이미 사용 중인 코드입니다. 다른 코드를 입력해주세요." : "";
   });
 
   $("#btn-confirm-change-code").addEventListener("click", async () => {
-    const user = getCurrentUser();
+    const me = getCurrentUser();
+    if (!me || !me.isAdmin) { closeModal(); return; } // 관리자만 이 모달을 실행할 수 있습니다(안전장치).
+    const target = changeCodeTarget || me;
     const newCode = $("#new-code-input").value.trim();
     const errEl = $("#change-code-error");
 
@@ -973,16 +1030,25 @@ try {
       errEl.textContent = "영문/숫자 4자리로 입력해주세요.";
       return;
     }
-    const dup = loadUsers().find((u) => u.id !== user.id && u.code.toLowerCase() === newCode.toLowerCase());
+    const dup = loadUsers().find((u) => u.id !== target.id && u.code.toLowerCase() === newCode.toLowerCase());
     if (dup) {
       errEl.textContent = "이미 사용 중인 코드입니다. 다른 코드를 입력해주세요.";
       return;
     }
     try {
-      await updateUserCode(user.id, newCode);
-      closeModal();
-      alert("접속 코드가 변경되었습니다. 새 코드로 다시 로그인해주세요.");
-      await signOut(auth); // onAuthStateChanged가 로그인 화면 전환까지 처리합니다.
+      if (changeCodeTarget) {
+        // 관리자가 다른 사용자의 코드를 대신 변경하는 경우: 관리자 본인 세션은 유지됩니다.
+        await adminChangeUserCode(changeCodeTarget, newCode);
+        closeModal();
+        alert(`"${changeCodeTarget.name}" 사용자의 접속 코드를 변경했습니다.`);
+        renderUserList();
+      } else {
+        // 관리자 본인이 자기 코드를 스스로 변경하는 경우.
+        await updateUserCode(me.id, newCode);
+        closeModal();
+        alert("접속 코드가 변경되었습니다. 새 코드로 다시 로그인해주세요.");
+        await signOut(auth); // onAuthStateChanged가 로그인 화면 전환까지 처리합니다.
+      }
     } catch (err) {
       if (err && err.code === "auth/requires-recent-login") {
         errEl.textContent = "보안을 위해 다시 로그인한 후 코드를 변경해주세요.";
