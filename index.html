@@ -97,6 +97,15 @@
       <section id="screen-dashboard" class="screen hidden">
         <p class="hint-text">참여자별 이번 달 달성률과 연속 목표 달성 현황을 확인할 수 있어요.</p>
 
+        <div class="my-stat-card" id="dash-overall-stat-card">
+          <div class="my-stat-row">
+            <span class="my-stat-label">전체 참여자 평균 달성률</span>
+            <span class="my-stat-value" id="dash-overall-stat-value">—</span>
+          </div>
+          <div class="my-stat-bar-wrap"><div class="my-stat-bar" id="dash-overall-stat-bar" style="width:0%"></div></div>
+          <span class="my-stat-sub" id="dash-overall-stat-sub"></span>
+        </div>
+
         <div class="calendar-nav">
           <button id="btn-dash-prev-month" class="nav-btn" aria-label="이전 달">‹</button>
           <h2 id="dashboard-month-title"></h2>

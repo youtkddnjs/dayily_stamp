@@ -888,11 +888,19 @@ try {
     list.innerHTML = "";
     $("#dashboard-user-list-empty").classList.toggle("hidden", users.length > 0);
 
+    // 참여자 전체를 하나로 합친 평균 달성률: 각자의 %를 단순 평균하지 않고, 모든 참여자의
+    // "필수 목표 완전 달성한 날 수"와 "필수 목표가 적용됐던 날 수"를 먼저 다 더한 뒤 나눕니다.
+    // 이렇게 해야 목표 적용 일수가 적은 사람 한 명 때문에 전체 수치가 크게 흔들리지 않습니다.
+    let totalApplicableDays = 0;
+    let totalFullyDoneDays = 0;
+
     users.forEach((u) => {
       const stats = monthRequiredDayStats(u.id, dashState.year, dashState.month);
       const streak = currentStreak(u.id);
       const rateText = stats.rate == null ? "—" : stats.rate + "%";
       const barWidth = stats.rate == null ? 0 : stats.rate;
+      totalApplicableDays += stats.applicableDays;
+      totalFullyDoneDays += stats.fullyDoneDays;
 
       const li = document.createElement("li");
       li.className = "dashboard-item";
@@ -909,6 +917,16 @@ try {
       `;
       list.appendChild(li);
     });
+
+    const overallRate = totalApplicableDays > 0 ? Math.round((totalFullyDoneDays / totalApplicableDays) * 100) : null;
+    $("#dash-overall-stat-value").textContent = overallRate == null ? "—" : overallRate + "%";
+    $("#dash-overall-stat-bar").style.width = (overallRate == null ? 0 : overallRate) + "%";
+    $("#dash-overall-stat-sub").textContent =
+      users.length === 0
+        ? "아직 참여자가 없어요."
+        : totalApplicableDays === 0
+        ? "이 달에 필수 목표가 적용된 참여자가 없어요."
+        : `참여자 ${users.length}명 · 필수 목표 완전 달성 ${totalFullyDoneDays}/${totalApplicableDays}일`;
   }
 
   /* ---------------- 목표 추가/수정 모달 ---------------- */
