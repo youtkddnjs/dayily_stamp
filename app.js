@@ -730,6 +730,15 @@ try {
   }
 
   /* ---------------- 목표 관리 화면: 목표 목록 ---------------- */
+  // "미라클 모닝" on/off 스위치로 추가/삭제되는 목표는 이 제목으로 식별합니다. 스위치를 켜면
+  // 이 제목의 매일 필수 목표가 자동 생성되고, 끄면 삭제됩니다. 생성된 뒤에는 평범한 목표라서
+  // 목표 목록에서 눌러 수정・삭제할 수도 있는데, 그러면(특히 제목을 바꾸면) 스위치가 더 이상
+  // 그 목표를 추적하지 못하고 꺼진 것으로 보일 수 있습니다 — 의도된 동작입니다.
+  const MIRACLE_MORNING_TITLE = "미라클 모닝";
+  function findMiracleMorningGoal(userId) {
+    return loadGoals().find((g) => g.userId === userId && g.title === MIRACLE_MORNING_TITLE);
+  }
+
   function renderGoalList() {
     const user = getCurrentUser();
     if (!user) return;
@@ -753,7 +762,48 @@ try {
       li.addEventListener("click", () => openGoalModal(g.id));
       list.appendChild(li);
     });
+
+    $("#toggle-miracle-morning").checked = !!findMiracleMorningGoal(user.id);
   }
+
+  $("#toggle-miracle-morning").addEventListener("change", async (e) => {
+    const user = getCurrentUser();
+    const checkbox = e.target;
+    if (!user) return;
+    checkbox.disabled = true;
+    try {
+      const existing = findMiracleMorningGoal(user.id);
+      if (checkbox.checked) {
+        if (!existing) {
+          await createGoal({
+            userId: user.id,
+            title: MIRACLE_MORNING_TITLE,
+            description: "",
+            freqType: "daily",
+            daysOfWeek: [],
+            intervalDays: null,
+            required: true,
+            startDate: todayStr(),
+            createdAt: todayStr(),
+          });
+        }
+      } else if (existing) {
+        const ok = confirm(`"${MIRACLE_MORNING_TITLE}" 목표를 끄면 관련된 완료 기록도 함께 삭제됩니다. 계속할까요?`);
+        if (!ok) {
+          checkbox.checked = true;
+          return;
+        }
+        await deleteGoalAndCompletions(existing.id);
+      }
+      renderGoalList();
+      renderCalendar();
+    } catch (err) {
+      alert("변경에 실패했습니다. 네트워크 상태를 확인해주세요.");
+      renderGoalList();
+    } finally {
+      checkbox.disabled = false;
+    }
+  });
 
   function renderSettings() {
     const user = getCurrentUser();
