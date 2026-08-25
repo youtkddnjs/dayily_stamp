@@ -41,6 +41,9 @@
         <button type="button" class="side-nav-btn" data-screen="dashboard">
           <span class="side-nav-icon">📊</span><span class="side-nav-label">현황판</span>
         </button>
+        <button type="button" class="side-nav-btn" data-screen="goals">
+          <span class="side-nav-icon">🎯</span><span class="side-nav-label">목표 관리</span>
+        </button>
         <button type="button" class="side-nav-btn" data-screen="settings">
           <span class="side-nav-icon">⚙️</span><span class="side-nav-label">설정</span>
         </button>
@@ -86,7 +89,7 @@
         <div class="calendar-grid" id="calendar-grid"></div>
 
         <p id="no-goal-warning" class="empty-text hidden">
-          아직 설정된 목표가 없어요. <a href="#" id="link-add-first-goal">설정에서 목표를 추가</a>해보세요.
+          아직 설정된 목표가 없어요. <a href="#" id="link-add-first-goal">목표 관리에서 목표를 추가</a>해보세요.
         </p>
       </section>
 
@@ -104,8 +107,8 @@
         <p id="dashboard-user-list-empty" class="empty-text hidden">아직 참여자가 없습니다.</p>
       </section>
 
-      <!-- ===== 설정 화면 ===== -->
-      <section id="screen-settings" class="screen hidden">
+      <!-- ===== 목표 관리 화면 ===== -->
+      <section id="screen-goals" class="screen hidden">
         <div class="settings-content">
           <div class="settings-block">
             <div class="settings-block-header">
@@ -115,7 +118,12 @@
             <ul id="goal-list" class="goal-list"></ul>
             <p id="goal-list-empty" class="empty-text hidden">등록된 목표가 없습니다.</p>
           </div>
+        </div>
+      </section>
 
+      <!-- ===== 설정 화면 ===== -->
+      <section id="screen-settings" class="screen hidden">
+        <div class="settings-content">
           <div class="settings-block">
             <h3>계정</h3>
             <p class="hint-text">현재 접속 코드로 로그인 중입니다.</p>

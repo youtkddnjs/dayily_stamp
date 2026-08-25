@@ -454,9 +454,10 @@ try {
   const innerScreens = {
     calendar: $("#screen-calendar"),
     dashboard: $("#screen-dashboard"),
+    goals: $("#screen-goals"),
     settings: $("#screen-settings"),
   };
-  const SCREEN_TITLES = { calendar: "캘린더", dashboard: "현황판", settings: "설정" };
+  const SCREEN_TITLES = { calendar: "캘린더", dashboard: "현황판", goals: "목표 관리", settings: "설정" };
 
   function showBootError(msg) {
     bootStatusText.textContent = "연결에 문제가 발생했어요.";
@@ -495,6 +496,7 @@ try {
     const active = activeScreenName();
     if (active === "calendar") { renderCalendar(); renderMyStat(); }
     else if (active === "dashboard") renderDashboard();
+    else if (active === "goals") renderGoalList();
     else if (active === "settings") renderSettings();
   }
 
@@ -503,6 +505,7 @@ try {
       const name = btn.dataset.screen;
       if (name === "calendar") { renderCalendar(); renderMyStat(); }
       if (name === "dashboard") renderDashboard();
+      if (name === "goals") renderGoalList();
       if (name === "settings") renderSettings();
       showScreen(name);
     });
@@ -580,8 +583,8 @@ try {
   /* ---------------- 화면 전환 ---------------- */
   $("#link-add-first-goal").addEventListener("click", (e) => {
     e.preventDefault();
-    renderSettings();
-    showScreen("settings");
+    renderGoalList();
+    showScreen("goals");
   });
 
   /* ---------------- 캘린더 렌더 ---------------- */
@@ -726,7 +729,8 @@ try {
     return "";
   }
 
-  function renderSettings() {
+  /* ---------------- 목표 관리 화면: 목표 목록 ---------------- */
+  function renderGoalList() {
     const user = getCurrentUser();
     if (!user) return;
 
@@ -749,6 +753,11 @@ try {
       li.addEventListener("click", () => openGoalModal(g.id));
       list.appendChild(li);
     });
+  }
+
+  function renderSettings() {
+    const user = getCurrentUser();
+    if (!user) return;
 
     // 개인은 더 이상 스스로 접속 코드를 바꿀 수 없고, 관리자만 바꿀 수 있습니다
     // (본인 것은 이 "계정" 섹션에서, 다른 사람 것은 아래 "사용자 관리" 목록에서).
@@ -997,7 +1006,7 @@ try {
         });
       }
       closeModal();
-      renderSettings();
+      renderGoalList();
       renderCalendar();
     } catch (err) {
       errEl.textContent = "저장에 실패했습니다. 네트워크 상태를 확인해주세요.";
@@ -1012,7 +1021,7 @@ try {
     try {
       await deleteGoalAndCompletions(state.editingGoalId);
       closeModal();
-      renderSettings();
+      renderGoalList();
       renderCalendar();
     } catch (err) {
       alert("삭제에 실패했습니다. 네트워크 상태를 확인해주세요.");
@@ -1213,6 +1222,7 @@ try {
       try {
         await restoreUserData(user.id, data.goals, data.completions);
         $("#backup-msg").textContent = "복구가 완료되었습니다.";
+        renderGoalList();
         renderSettings();
         renderCalendar();
         renderMyStat();
