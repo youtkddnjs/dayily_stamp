@@ -245,12 +245,16 @@ try {
   // 목표를 추가하고 나서 곧바로 캘린더를 다시 그리는데, 이때 Firestore 실시간 리스너가
   // 아직 반영되기 전이면(비동기라 타이밍이 보장되지 않음) 방금 추가한 목표가 캘린더에
   // 바로 보이지 않을 수 있습니다. 리스너를 기다리지 않고 로컬 캐시도 즉시 갱신해
-  // 이 경쟁 상태를 없앱니다(코드 변경 때와 같은 이유 — 나중에 리스너가 같은 값을 다시
-  // 전달해도 동일한 값이라 문제 없습니다).
+  // 이 경쟁 상태를 없앱니다(코드 변경 때와 같은 이유). 다만 setDoc이 끝나기도 전에
+  // 리스너가 먼저(예: 오프라인 캐시의 로컬 스냅샷) 이 목표를 goalsCache에 반영해버릴 수도
+  // 있으므로, 무조건 push하지 않고 이미 들어있는지 먼저 확인합니다 — 그렇지 않으면 같은
+  // 목표가 두 번 들어가 목록에 2줄로 보이는 버그가 생깁니다.
   async function createGoal(goalData) {
     const id = genId("g");
     await setDoc(doc(db, "goals", id), goalData);
-    goalsCache.push({ id, ...goalData });
+    if (!goalsCache.some((g) => g.id === id)) {
+      goalsCache.push({ id, ...goalData });
+    }
     return id;
   }
 
