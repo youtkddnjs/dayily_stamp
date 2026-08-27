@@ -668,7 +668,7 @@ try {
     const d = new Date(dateStr + "T00:00:00");
     $("#modal-day-title").textContent = `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${DOW_LABELS[d.getDay()]})`;
 
-    const goals = goalsForUserOnDate(user.id, dateStr);
+    const { ordered: goals, mmCount, otherCount } = sortMiracleMorningFirst(goalsForUserOnDate(user.id, dateStr));
     const list = $("#modal-goal-list");
     list.innerHTML = "";
 
@@ -688,6 +688,7 @@ try {
       `;
       list.appendChild(li);
     });
+    insertGoalListDivider(list, mmCount, otherCount);
 
     openModal("day");
   }
@@ -739,11 +740,27 @@ try {
     return loadGoals().find((g) => g.userId === userId && g.title === MIRACLE_MORNING_TITLE);
   }
 
+  // "미라클 모닝"을 목록 맨 위로 올리고, 나머지 목표는 원래 순서를 그대로 유지합니다.
+  function sortMiracleMorningFirst(goals) {
+    const mm = goals.filter((g) => g.title === MIRACLE_MORNING_TITLE);
+    const others = goals.filter((g) => g.title !== MIRACLE_MORNING_TITLE);
+    return { ordered: mm.concat(others), mmCount: mm.length, otherCount: others.length };
+  }
+
+  // 목표 목록 <ul> 안에 "미라클 모닝"과 나머지 목표 사이를 구분하는 줄을 끼워 넣습니다.
+  // (미라클 모닝이 있고, 그 아래에 다른 목표도 있을 때만 표시합니다.)
+  function insertGoalListDivider(listEl, mmCount, otherCount) {
+    if (mmCount === 0 || otherCount === 0) return;
+    const divider = document.createElement("li");
+    divider.className = "list-divider";
+    listEl.insertBefore(divider, listEl.children[mmCount]);
+  }
+
   function renderGoalList() {
     const user = getCurrentUser();
     if (!user) return;
 
-    const goals = loadGoals().filter((g) => g.userId === user.id);
+    const { ordered: goals, mmCount, otherCount } = sortMiracleMorningFirst(loadGoals().filter((g) => g.userId === user.id));
     const list = $("#goal-list");
     list.innerHTML = "";
     $("#goal-list-empty").classList.toggle("hidden", goals.length > 0);
@@ -762,6 +779,7 @@ try {
       li.addEventListener("click", () => openGoalModal(g.id));
       list.appendChild(li);
     });
+    insertGoalListDivider(list, mmCount, otherCount);
 
     $("#toggle-miracle-morning").checked = !!findMiracleMorningGoal(user.id);
   }
