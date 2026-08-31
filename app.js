@@ -107,6 +107,11 @@ try {
   function emailForUserId(userId) { return `${userId}@${AUTH_EMAIL_DOMAIN}`; }
   function derivePassword(code) { return "stamp-" + code.toLowerCase(); }
 
+  // "미라클 모닝" on/off 스위치로 추가/삭제되는 목표는 이 제목으로 식별합니다(목표 관리 화면
+  // 참고). 연속 달성일 계산에서는 일부러 제외합니다 — 다른 목표들은 원래부터 꾸준히 하던
+  // 것들인데, 나중에 이 스위치를 켰다고 해서 그날부터 기존 연속 기록이 깨지면 안 되니까요.
+  const MIRACLE_MORNING_TITLE = "미라클 모닝";
+
   /* ---------------- Firestore 캐시 (실시간 동기화) ---------------- */
   let usersCache = [];
   let goalsCache = [];
@@ -406,6 +411,7 @@ try {
 
   // 오늘(또는 목표가 있던 가장 최근 날짜)부터 거슬러 올라가며 모든 목표를 완료한 날의 연속 일수.
   // 아직 진행 중인 오늘/가장 최근 날짜가 미완료여도 스트릭을 끊지 않고 건너뜁니다.
+  // "미라클 모닝"은 이 계산에서 제외합니다(위 MIRACLE_MORNING_TITLE 주석 참고).
   function currentStreak(userId) {
     let streak = 0;
     const cursor = new Date();
@@ -413,7 +419,7 @@ try {
 
     for (let i = 0; i < 3650; i++) {
       const dateStr = todayStr(cursor);
-      const goals = goalsForUserOnDate(userId, dateStr);
+      const goals = goalsForUserOnDate(userId, dateStr).filter((g) => g.title !== MIRACLE_MORNING_TITLE);
       if (goals.length > 0) {
         const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
         const fullyDone = doneCount === goals.length;
@@ -731,11 +737,10 @@ try {
   }
 
   /* ---------------- 목표 관리 화면: 목표 목록 ---------------- */
-  // "미라클 모닝" on/off 스위치로 추가/삭제되는 목표는 이 제목으로 식별합니다. 스위치를 켜면
-  // 이 제목의 매일 필수 목표가 자동 생성되고, 끄면 삭제됩니다. 생성된 뒤에는 평범한 목표라서
-  // 목표 목록에서 눌러 수정・삭제할 수도 있는데, 그러면(특히 제목을 바꾸면) 스위치가 더 이상
-  // 그 목표를 추적하지 못하고 꺼진 것으로 보일 수 있습니다 — 의도된 동작입니다.
-  const MIRACLE_MORNING_TITLE = "미라클 모닝";
+  // 스위치를 켜면 이 제목의 매일 필수 목표가 자동 생성되고, 끄면 삭제됩니다(MIRACLE_MORNING_TITLE
+  // 정의는 위쪽 참고). 생성된 뒤에는 평범한 목표라서 목표 목록에서 눌러 수정・삭제할 수도 있는데,
+  // 그러면(특히 제목을 바꾸면) 스위치가 더 이상 그 목표를 추적하지 못하고 꺼진 것으로 보일 수
+  // 있습니다 — 의도된 동작입니다.
   function findMiracleMorningGoal(userId) {
     return loadGoals().find((g) => g.userId === userId && g.title === MIRACLE_MORNING_TITLE);
   }
