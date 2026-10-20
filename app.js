@@ -108,8 +108,8 @@ try {
   function derivePassword(code) { return "stamp-" + code.toLowerCase(); }
 
   // "미라클 모닝" on/off 스위치로 추가/삭제되는 목표는 이 제목으로 식별합니다(목표 관리 화면
-  // 참고). 연속 달성일 계산에서는 일부러 제외합니다 — 다른 목표들은 원래부터 꾸준히 하던
-  // 것들인데, 나중에 이 스위치를 켰다고 해서 그날부터 기존 연속 기록이 깨지면 안 되니까요.
+  // 참고). 달성률과 연속 달성일 계산에서는 모두 제외합니다 — 이 목표를 체크하지 않아도
+  // 나머지 필수 목표만 다 하면 그날은 달성한 것으로 봅니다.
   const MIRACLE_MORNING_TITLE = "미라클 모닝";
 
   /* ---------------- Firestore 캐시 (실시간 동기화) ---------------- */
@@ -376,18 +376,26 @@ try {
     return "partial";
   }
 
-  // 오늘 목표 달성률(캘린더 화면 전용): 오늘 적용되는 "필수" 목표 중 몇 개를 완료했는지의
-  // 비율입니다. 선택 목표는 분모/분자 어디에도 들어가지 않습니다.
+  // 달성률·연속 달성일 계산에 쓰이는 목표: 그날 적용되는 "필수" 목표 중 "미라클 모닝"을 뺀 것.
+  // 선택 목표와 미라클 모닝은 체크하든 안 하든 달성률/연속 일수에 영향을 주지 않습니다.
+  function countedGoalsOnDate(userId, dateStr) {
+    return goalsForUserOnDate(userId, dateStr).filter(
+      (g) => g.required !== false && g.title !== MIRACLE_MORNING_TITLE
+    );
+  }
+
+  // 오늘 목표 달성률(캘린더 화면 전용): 오늘 적용되는 필수 목표(미라클 모닝 제외) 중
+  // 몇 개를 완료했는지의 비율입니다.
   function todayRequiredStats(userId) {
     const dateStr = todayStr();
-    const requiredGoals = goalsForUserOnDate(userId, dateStr).filter((g) => g.required !== false);
+    const requiredGoals = countedGoalsOnDate(userId, dateStr);
     const doneCount = requiredGoals.filter((g) => isDone(userId, g.id, dateStr)).length;
     const rate = requiredGoals.length > 0 ? Math.round((doneCount / requiredGoals.length) * 100) : null;
     return { total: requiredGoals.length, done: doneCount, rate };
   }
 
   // 이번 달 달성률(현황판 화면 전용): 그 달 1일부터 말일까지(아직 오지 않은 날짜도 포함)를
-  // 분모로 삼아, "그날 적용되는 필수 목표를 모두 완료했는지"로 하루하루를 판정합니다.
+  // 분모로 삼아, "그날 적용되는 필수 목표(미라클 모닝 제외)를 모두 완료했는지"로 하루하루를 판정합니다.
   // 그날 적용되는 필수 목표가 하나도 없는 날(예: 주 3회만 필수인 목표라 오늘은 해당 없음)은
   // 분모·분자 모두에서 제외합니다. 아직 오지 않은 날짜도 분모에 포함되므로, 월초에는
   // 낮게 보이다가 각 날짜에 실제로 도달해 완료할 때마다 점점 오릅니다.
@@ -398,7 +406,7 @@ try {
 
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${pad2(month + 1)}-${pad2(day)}`;
-      const requiredGoals = goalsForUserOnDate(userId, dateStr).filter((g) => g.required !== false);
+      const requiredGoals = countedGoalsOnDate(userId, dateStr);
       if (requiredGoals.length === 0) continue;
       applicableDays++;
       const allDone = requiredGoals.every((g) => isDone(userId, g.id, dateStr));
@@ -409,26 +417,27 @@ try {
     return { daysInMonth, applicableDays, fullyDoneDays, rate };
   }
 
-  // 오늘(또는 목표가 있던 가장 최근 날짜)부터 거슬러 올라가며 모든 목표를 완료한 날의 연속 일수.
-  // 아직 진행 중인 오늘/가장 최근 날짜가 미완료여도 스트릭을 끊지 않고 건너뜁니다.
-  // "미라클 모닝"은 이 계산에서 제외합니다(위 MIRACLE_MORNING_TITLE 주석 참고).
+  // 연속 달성일: 오늘부터 하루씩 거슬러 올라가며, 필수 목표(미라클 모닝 제외)를 모두 완료한
+  // 날을 셉니다. 필수 목표가 있었는데 하나라도 빠진 날을 만나면 거기서 끊기므로, 하루라도
+  // 빠지면 다음 날부터 1일째로 다시 시작합니다.
+  // - 오늘은 아직 진행 중이라, 오늘이 미완료면 끊지 않고 어제부터 셉니다(완료하면 바로 +1).
+  // - 필수 목표가 아예 없는 날(예: 주간 목표의 해당 요일이 아닌 날)은 빠진 날이 아니므로
+  //   세지도 끊지도 않고 건너뜁니다.
   function currentStreak(userId) {
     let streak = 0;
     const cursor = new Date();
-    let seenFirstApplicable = false;
+    const today = todayStr(cursor);
 
     for (let i = 0; i < 3650; i++) {
       const dateStr = todayStr(cursor);
-      const goals = goalsForUserOnDate(userId, dateStr).filter((g) => g.title !== MIRACLE_MORNING_TITLE);
+      const goals = countedGoalsOnDate(userId, dateStr);
       if (goals.length > 0) {
-        const doneCount = goals.filter((g) => isDone(userId, g.id, dateStr)).length;
-        const fullyDone = doneCount === goals.length;
+        const fullyDone = goals.every((g) => isDone(userId, g.id, dateStr));
         if (fullyDone) {
           streak++;
-        } else if (seenFirstApplicable) {
+        } else if (dateStr !== today) {
           break;
         }
-        seenFirstApplicable = true;
       }
       cursor.setDate(cursor.getDate() - 1);
     }
@@ -961,19 +970,11 @@ try {
     list.innerHTML = "";
     $("#dashboard-user-list-empty").classList.toggle("hidden", users.length > 0);
 
-    // 참여자 전체를 하나로 합친 평균 달성률: 각자의 %를 단순 평균하지 않고, 모든 참여자의
-    // "필수 목표 완전 달성한 날 수"와 "필수 목표가 적용됐던 날 수"를 먼저 다 더한 뒤 나눕니다.
-    // 이렇게 해야 목표 적용 일수가 적은 사람 한 명 때문에 전체 수치가 크게 흔들리지 않습니다.
-    let totalApplicableDays = 0;
-    let totalFullyDoneDays = 0;
-
     users.forEach((u) => {
       const stats = monthRequiredDayStats(u.id, dashState.year, dashState.month);
       const streak = currentStreak(u.id);
       const rateText = stats.rate == null ? "—" : stats.rate + "%";
       const barWidth = stats.rate == null ? 0 : stats.rate;
-      totalApplicableDays += stats.applicableDays;
-      totalFullyDoneDays += stats.fullyDoneDays;
 
       const li = document.createElement("li");
       li.className = "dashboard-item";
@@ -990,16 +991,6 @@ try {
       `;
       list.appendChild(li);
     });
-
-    const overallRate = totalApplicableDays > 0 ? Math.round((totalFullyDoneDays / totalApplicableDays) * 100) : null;
-    $("#dash-overall-stat-value").textContent = overallRate == null ? "—" : overallRate + "%";
-    $("#dash-overall-stat-bar").style.width = (overallRate == null ? 0 : overallRate) + "%";
-    $("#dash-overall-stat-sub").textContent =
-      users.length === 0
-        ? "아직 참여자가 없어요."
-        : totalApplicableDays === 0
-        ? "이 달에 필수 목표가 적용된 참여자가 없어요."
-        : `참여자 ${users.length}명 · 필수 목표 완전 달성 ${totalFullyDoneDays}/${totalApplicableDays}일`;
   }
 
   /* ---------------- 목표 추가/수정 모달 ---------------- */
